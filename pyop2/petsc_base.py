@@ -444,13 +444,27 @@ class Dat(base.Dat, VecAccessMixin):
 
     @property
     def _kernel_args_(self):
-        with self.vec as petsc_vec:
-            if petsc_vec.type == 'seq':
+        if self.dtype == PETSc.ScalarType:
+            # In this case we can allocate a petsc vec
+            with self.vec as petsc_vec:
+                if petsc_vec.type == 'seq':
+                    return (self._data.ctypes.data, )
+                elif petsc_vec.type == 'seqcuda':
+                    return (petsc_vec.getCUDAHandle(), )
+                else:
+                    raise NotImplementedError()
+        elif self.dtype.kind in ['i', 'u']:
+            from pyop2.sequential import SequentialCPUBackend
+            from pyop2.op2 import compute_backend
+            if isinstance(compute_backend, SequentialCPUBackend):
                 return (self._data.ctypes.data, )
-            elif petsc_vec.type == 'seqcuda':
-                return (petsc_vec.getCUDAHandle(), )
             else:
+                # FIXME: Should decide whether switching backends of
+                # non-petscvec backed Dats should be allowed.
                 raise NotImplementedError()
+        else:
+            raise NotImplementedError("petsc_base.Dat cannot handle entries of"
+                    " type '{}'.".format(self.dtype))
 
     @collective
     @property
