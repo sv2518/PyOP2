@@ -50,7 +50,7 @@ from pyop2.sequential import Map, MixedMap  # noqa: F401
 from pyop2.sequential import Dat, MixedDat, DatView, Mat  # noqa: F401
 from pyop2.sequential import Global, GlobalDataSet        # noqa: F401
 from pyop2.sequential import ParLoop as SeqParLoop  # noqa: F401
-from pyop2.sequential import sequential_cpu_backend
+from pyop2.sequential import cpu_backend
 
 from pyop2.pyparloop import ParLoop as PyParLoop
 import types
@@ -128,4 +128,4 @@ def exit():
     _initialised = False
 
 
-compute_backend = sequential_cpu_backend
+compute_backend = cpu_backend

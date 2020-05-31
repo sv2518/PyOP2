@@ -467,9 +467,9 @@ class Dat(base.Dat, VecAccessMixin):
                 else:
                     raise NotImplementedError()
         elif self.dtype.kind in ['i', 'u']:
-            from pyop2.sequential import SequentialCPUBackend
+            from pyop2.sequential import CPUBackend
             from pyop2.op2 import compute_backend
-            if isinstance(compute_backend, SequentialCPUBackend):
+            if isinstance(compute_backend, CPUBackend):
                 return (self._data.ctypes.data, )
             else:
                 # FIXME: Should decide whether switching backends of
