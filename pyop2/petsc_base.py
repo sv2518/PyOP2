@@ -460,7 +460,7 @@ class Dat(base.Dat, VecAccessMixin):
         if self.dtype == PETSc.ScalarType:
             # In this case we can allocate a petsc vec
             with self.vec as petsc_vec:
-                if petsc_vec.type == 'seq':
+                if petsc_vec.type in ['seq', 'mpi']:
                     return (self._data.ctypes.data, )
                 elif petsc_vec.type == 'seqcuda':
                     return (petsc_vec.getCUDAHandle(), )
