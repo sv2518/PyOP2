@@ -246,7 +246,7 @@ def generate_single_cell_wrapper(iterset, args, forward_args=(), kernel_name=Non
     return code.device_code()
 
 
-class SequentialCPUBackend(AbstractPETScBackend):
+class CPUBackend(AbstractPETScBackend):
     ParLoop = ParLoop
     Set = Set
     ExtrudedSet = ExtrudedSet
@@ -262,7 +262,9 @@ class SequentialCPUBackend(AbstractPETScBackend):
     Mat = Mat
     Global = Global
     GlobalDataSet = GlobalDataSet
-    PETScVecType = 'seq'
+
+    def PETScVecType(self, comm):
+        return 'seq' if comm.size == 1 else 'mpi'
 
 
-sequential_cpu_backend = SequentialCPUBackend()
+cpu_backend = CPUBackend()

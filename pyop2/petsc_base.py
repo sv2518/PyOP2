@@ -133,7 +133,7 @@ class DataSet(base.DataSet):
 
     def _update_petsc_vec_type(self, vec):
         from pyop2.op2 import compute_backend
-        to_type = compute_backend.PETScVecType
+        to_type = compute_backend.PETScVecType(self.comm)
         from_type = vec.type
         if from_type == to_type:
             return
@@ -409,12 +409,25 @@ class Dat(base.Dat, VecAccessMixin):
                 vec.setArray(self._data[:size[0]])
             else:
                 raise unknown_conversion_err
+        elif from_type == 'mpi':
+            if to_type == 'mpicuda':
+                # TODO
+                raise unknown_conversion_err
+            else:
+                raise unknown_conversion_err
+        elif from_type == 'mpicuda':
+            if to_type == 'mpi':
+                # TODO
+                raise unknown_conversion_err
+            else:
+                raise unknown_conversion_err
+
         else:
             raise unknown_conversion_err
 
     def ensure_availability_on(self, backend):
         self._update_petsc_vec_type(self._vec,
-                backend.PETScVecType)
+                backend.PETScVecType(self.comm))
 
     @contextmanager
     def vec_context(self, access):
@@ -428,7 +441,7 @@ class Dat(base.Dat, VecAccessMixin):
 
         from pyop2.op2 import compute_backend
         self._vec.stateIncrease()
-        if self._vec.type != compute_backend.PETScVecType:
+        if self._vec.type != compute_backend.PETScVecType(self.comm):
             if configuration['only_explicit_host_device_data_transfers']:
                 raise RuntimeError("Memory location mismatch for"
                         " '{}'.".format(self.name))
@@ -469,14 +482,26 @@ class Dat(base.Dat, VecAccessMixin):
     @collective
     @property
     def data(self):
-        with self.vec as v:
-            if v.type == 'seq':
-                return v.array
-            elif v.type == 'seqcuda':
-                v.restoreCUDAHandle(v.getCUDAHandle())
-                return v.array
-            else:
-                raise NotImplementedError("Unknown vec type %s." % v.type)
+        if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
+            raise RuntimeError("Illegal access: no data associated with this Dat!")
+        self.halo_valid = False
+
+        if self.dtype == PETSc.ScalarType:
+            with self.vec as v:
+                if v.type == 'seq':
+                    return v.array
+                elif v.type == 'seqcuda':
+                    v.restoreCUDAHandle(v.getCUDAHandle())
+                    return v.array
+                else:
+                    raise NotImplementedError("Unknown vec type %s." % v.type)
+        elif self.dtype.kind in ['i', 'u']:
+            v = self._data[:self.dataset.size].view()
+            v.setflags(write=True)
+            return v
+        else:
+            raise NotImplementedError("petsc_base.Dat cannot handle entries of"
+                    " type '{}'.".format(self.dtype))
 
 
 class MixedDat(base.MixedDat, VecAccessMixin):

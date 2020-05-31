@@ -641,7 +641,13 @@ class CUDABackend(AbstractPETScBackend):
     Mat = petsc_base.Mat
     Global = Global
     GlobalDataSet = petsc_base.GlobalDataSet
-    PETScVecType = 'seqcuda'
+
+    def PETScVecType(self, comm):
+        if comm.size == 1:
+            return 'seqcuda'
+        else:
+            # TODO:
+            raise NotImplementedError("mpicuda is not yet exposed.")
 
 
 cuda_backend = CUDABackend()
