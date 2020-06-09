@@ -1651,7 +1651,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
                 loopy.GlobalArg("other", dtype=dtype, shape=rshape),
                 loopy.GlobalArg("ret", dtype=self.dtype, shape=(self.cdim,))]
         knl = loopy.make_function([domain], [insn], data, name=name)
-        return self._op_kernel_cache.setdefault(key, _make_object('Kernel', knl, name))
+        return self._op_kernel_cache.setdefault(key, Kernel(knl, name))
 
     def _op(self, other, op):
         ret = _make_object('Dat', self.dataset, None, self.dtype)
@@ -1695,7 +1695,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
         if not other_is_self:
             data.append(loopy.GlobalArg("other", dtype=dtype, shape=rshape))
         knl = loopy.make_function([domain], [insn], data, name=name)
-        return self._iop_kernel_cache.setdefault(key, _make_object('Kernel', knl, name))
+        return self._iop_kernel_cache.setdefault(key, Kernel(knl, name))
 
     def _iop(self, other, op):
         globalp = False
@@ -1732,7 +1732,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
                 loopy.GlobalArg("other", dtype=dtype, shape=(self.cdim,)),
                 loopy.GlobalArg("ret", dtype=self.dtype, shape=(1,))]
         knl = loopy.make_function([domain], [insn], data, name="inner")
-        k = _make_object('Kernel', knl, "inner")
+        k = Kernel(knl, "inner")
         return self._inner_kernel_cache.setdefault(dtype, k)
 
     def inner(self, other):
@@ -1787,7 +1787,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
         data = [loopy.GlobalArg("neg", dtype=self.dtype, shape=(self.cdim,)),
                 loopy.GlobalArg("self", dtype=self.dtype, shape=(self.cdim,))]
         knl = loopy.make_function([domain], [insn], data, name=name)
-        return _make_object('Kernel', knl, name)
+        return Kernel(knl, name)
 
     def __neg__(self):
         neg = _make_object('Dat', self.dataset, dtype=self.dtype)
