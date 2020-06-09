@@ -466,7 +466,7 @@ class Dat(base.Dat, VecAccessMixin):
                     return (petsc_vec.getCUDAHandle(), )
                 else:
                     raise NotImplementedError()
-        elif self.dtype.kind in ['i', 'u']:
+        else:
             from pyop2.sequential import CPUBackend
             from pyop2.op2 import compute_backend
             if isinstance(compute_backend, CPUBackend):
@@ -475,9 +475,6 @@ class Dat(base.Dat, VecAccessMixin):
                 # FIXME: Should decide whether switching backends of
                 # non-petscvec backed Dats should be allowed.
                 raise NotImplementedError()
-        else:
-            raise NotImplementedError("petsc_base.Dat cannot handle entries of"
-                    " type '{}'.".format(self.dtype))
 
     @collective
     @property
@@ -495,13 +492,10 @@ class Dat(base.Dat, VecAccessMixin):
                     return v.array
                 else:
                     raise NotImplementedError("Unknown vec type %s." % v.type)
-        elif self.dtype.kind in ['i', 'u']:
+        else:
             v = self._data[:self.dataset.size].view()
             v.setflags(write=True)
             return v
-        else:
-            raise NotImplementedError("petsc_base.Dat cannot handle entries of"
-                    " type '{}'.".format(self.dtype))
 
 
 class MixedDat(base.MixedDat, VecAccessMixin):
