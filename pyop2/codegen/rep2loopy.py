@@ -526,10 +526,12 @@ def statement_assign(expr, context):
     if isinstance(lvalue, Indexed):
         context.index_ordering.append(tuple(i.name for i in lvalue.index_ordering()))
     lvalue, rvalue = tuple(expression(c, context.parameters) for c in expr.children)
-    if isinstance(expr.label, UnpackInst):
+    if isinstance(expr.label, (PreUnpackInst, UnpackInst)):
         tag = "scatter"
     elif isinstance(expr.label, PackInst):
         tag = "gather"
+    else:
+        raise NotImplementedError()
 
     within_inames = context.within_inames[expr]
     id, depends_on = context.instruction_dependencies[expr]
