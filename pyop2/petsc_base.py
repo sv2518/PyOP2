@@ -370,6 +370,11 @@ class VecAccessMixin(metaclass=abc.ABCMeta):
 
 
 class Dat(base.Dat, VecAccessMixin):
+
+    def can_be_represented_as_petscvec(self):
+        return ((self.dtype == PETSc.ScalarType) and
+            self.cdim > 0)
+
     @utils.cached_property
     def _vec(self):
         assert self.dtype == PETSc.ScalarType, \
@@ -457,7 +462,7 @@ class Dat(base.Dat, VecAccessMixin):
 
     @property
     def _kernel_args_(self):
-        if self.dtype == PETSc.ScalarType:
+        if self.can_be_represented_as_petscvec():
             # In this case we can allocate a petsc vec
             with self.vec as petsc_vec:
                 if petsc_vec.type in ['seq', 'mpi']:
@@ -483,19 +488,22 @@ class Dat(base.Dat, VecAccessMixin):
             raise RuntimeError("Illegal access: no data associated with this Dat!")
         self.halo_valid = False
 
-        if self.dtype == PETSc.ScalarType:
+        if self.can_be_represented_as_petscvec():
+            # {{{ ensuring correctness of values in 'self._data'
+
             with self.vec as v:
                 if v.type == 'seq':
-                    return v.array
+                    pass
                 elif v.type == 'seqcuda':
                     v.restoreCUDAHandle(v.getCUDAHandle())
-                    return v.array
                 else:
                     raise NotImplementedError("Unknown vec type %s." % v.type)
-        else:
-            v = self._data[:self.dataset.size].view()
-            v.setflags(write=True)
-            return v
+
+            # }}}
+
+        v = self._data[:self.dataset.size].view()
+        v.setflags(write=True)
+        return v
 
 
 class MixedDat(base.MixedDat, VecAccessMixin):
