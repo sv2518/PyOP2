@@ -433,7 +433,7 @@ class CUDACompiler(Compiler):
         cc = "nvcc"
 
         super(CUDACompiler, self).__init__(cc, cppargs=cppargs, ldargs=[],
-                                            cpp=False, comm=comm)
+                                           cpp=False, comm=comm)
 
     @collective
     def get_source_module(self, jitmodule):
@@ -479,7 +479,7 @@ class CUDACompiler(Compiler):
             # Are we in the cache?
             with open(cname, 'r') as f:
                 source_module = SourceModule(f.read(), nvcc=self._cc,
-                        options=self._cppargs, cache_dir=cachedir)
+                                             options=self._cppargs, cache_dir=cachedir)
         else:
             # No, let's go ahead and build
             if self.comm.rank == 0:
@@ -488,16 +488,15 @@ class CUDACompiler(Compiler):
                 with progress(INFO, 'Compiling wrapper'):
                     # make sure that compiles successfully before writing to file
                     source_module = SourceModule(jitmodule.code_to_compile,
-                            nvcc=self._cc, options=self._cppargs,
-                            cache_dir=cachedir)
+                                                 nvcc=self._cc, options=self._cppargs,
+                                                 cache_dir=cachedir)
                     with open(cname, "w") as f:
                         f.write(jitmodule.code_to_compile)
             self.comm.barrier()
 
         return source_module
 
-    def get_function(self, code, extension, fn_name, argtypes=None,
-            restype=None):
+    def get_function(self, code, extension, fn_name, argtypes=None, restype=None):
         """
         .. warning::
             Callee does not prepare the function

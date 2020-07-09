@@ -27,5 +27,5 @@ class AbstractComputeBackend:
         val = super(AbstractComputeBackend, self)._getattr_(key)
         if isinstance(val, _not_implemented):
             raise NotImplementedError("'{}' is not implemented for backend"
-                    " '{}'.".format(val, self.__name__))
+                                      " '{}'.".format(val, self.__name__))
         return val

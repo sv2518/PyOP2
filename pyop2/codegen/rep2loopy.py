@@ -543,7 +543,6 @@ def statement_assign(expr, context):
                             tags=frozenset([tag]))
 
 
-
 @statement.register(FunctionCall)
 def statement_functioncall(expr, context):
     parameters = context.parameters

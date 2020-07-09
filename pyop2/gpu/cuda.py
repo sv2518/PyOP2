@@ -37,7 +37,6 @@ import os
 import ctypes
 from copy import deepcopy as dcopy
 
-from contextlib import contextmanager
 from hashlib import md5
 
 from pyop2.datatypes import IntType, as_ctypes
@@ -46,7 +45,7 @@ from pyop2 import compilation
 from pyop2 import petsc_base
 from pyop2.exceptions import *  # noqa: F401
 from pyop2.mpi import collective
-from pyop2.profiling import timed_region, timed_function
+from pyop2.profiling import timed_region
 from pyop2.utils import *
 from pyop2.configuration import configuration
 
@@ -115,6 +114,7 @@ class DataSet(petsc_base.DataSet):
         vec.setType('seqcuda')
         vec.setUp()
         return vec
+
 
 class Dat(petsc_base.Dat):
     """
@@ -197,8 +197,7 @@ class JITModule(base.JITModule):
         if configuration["gpu_strategy"] == "scpt":
             pass
         elif configuration["gpu_strategy"] == "user_specified_tile":
-            key += (
-                    configuration["gpu_cells_per_block"],
+            key += (configuration["gpu_cells_per_block"],
                     configuration["gpu_threads_per_cell"],
                     configuration["gpu_op_tile_descriptions"],
                     configuration["gpu_quad_rowtile_lengths"],
@@ -208,8 +207,7 @@ class JITModule(base.JITModule):
                     configuration["gpu_tiled_prefetch_of_input"],
                     configuration["gpu_tiled_prefetch_of_quad_weights"],)
         elif configuration["gpu_strategy"] == "auto_tile":
-            key += (
-                    configuration["gpu_planner_kernel_evals"],)
+            key += (configuration["gpu_planner_kernel_evals"],)
             assert isinstance(args[1], Set)
             problem_size = args[1].size
             # FIXME: is this a good heuristic?
@@ -235,9 +233,9 @@ class JITModule(base.JITModule):
         parameters = {'start': start, 'end': end}
 
         grid = tuple(int(evaluate(glens[i], parameters)) if i < len(glens) else 1
-                for i in range(2))
+                     for i in range(2))
         block = tuple(int(evaluate(llens[i], parameters)) if i < len(llens) else 1
-                for i in range(3))
+                      for i in range(3))
 
         return grid, block
 
@@ -245,13 +243,11 @@ class JITModule(base.JITModule):
     def get_args_marked_for_globals(self):
         args_to_make_global = []
         for i in range(len(self._fun.arg_format)-len(self.argtypes)):
-            args_to_make_global.append(
-                    numpy.load(self.ith_added_global_arg_i(i)))
+            args_to_make_global.append(numpy.load(self.ith_added_global_arg_i(i)))
 
-        const_args_as_globals = tuple(cuda.mem_alloc(arg.nbytes) for arg in
-            args_to_make_global)
-        for arg_gpu, arg in zip(const_args_as_globals,
-                args_to_make_global):
+        const_args_as_globals = tuple(cuda.mem_alloc(arg.nbytes)
+                                      for arg in args_to_make_global)
+        for arg_gpu, arg in zip(const_args_as_globals, args_to_make_global):
             cuda.memcpy_htod(arg_gpu, arg)
 
         evt = cuda.Event()
@@ -313,7 +309,7 @@ class JITModule(base.JITModule):
         code, processed_program, args_to_make_global = generate_gpu_kernel(wrapper, self.args, self.argshapes)
         for i, arg_to_make_global in enumerate(args_to_make_global):
             numpy.save(self.ith_added_global_arg_i(i),
-                    arg_to_make_global)
+                       arg_to_make_global)
 
         with open(self.config_file_path, 'w') as f:
             glens, llens = processed_program.get_grid_size_upper_bounds_as_exprs()
@@ -334,7 +330,6 @@ class JITModule(base.JITModule):
 
         compiler = "nvcc"
         extension = "cu"
-        #print("{0}".format(self._wrapper_name))
         self._fun = compilation.load(self,
                                      extension,
                                      self._wrapper_name,
@@ -504,12 +499,11 @@ def generate_single_cell_wrapper(iterset, args, forward_args=(), kernel_name=Non
 
 
 def transpose_maps(kernel):
-    1/0
+    raise NotImplementedError()
     from loopy.kernel.array import FixedStrideArrayDimTag
     from pymbolic import parse
 
-    new_dim_tags = (FixedStrideArrayDimTag(1),
-            FixedStrideArrayDimTag(parse('end-start')))
+    new_dim_tags = (FixedStrideArrayDimTag(1), FixedStrideArrayDimTag(parse('end-start')))
     new_args = [arg.copy(dim_tags=new_dim_tags) if arg.name[:3] == 'map' else arg for arg in kernel.args]
     kernel = kernel.copy(args=new_args)
     return kernel
@@ -553,7 +547,7 @@ def generate_gpu_kernel(program, args=None, argshapes=None):
             new_args.append(arg)
 
     kernel = kernel.copy(instructions=new_insns, args=new_args)
-    #FIXME: These might not always be true
+    # FIXME: These might not always be true
     # Might need to be removed before going full production
     kernel = loopy.assume(kernel, "start=0")
     kernel = loopy.assume(kernel, "end>0")
@@ -569,43 +563,40 @@ def generate_gpu_kernel(program, args=None, argshapes=None):
         if configuration["gpu_strategy"] == "scpt":
             from pyop2.gpu.snpt import snpt_transform
             kernel, args_to_make_global = snpt_transform(kernel,
-                        configuration["gpu_cells_per_block"])
+                                                         configuration["gpu_cells_per_block"])
         elif configuration["gpu_strategy"] == "user_specified_tile":
             from pyop2.gpu.tile import tiled_transform
             from pyop2.gpu.tile import TilingConfiguration
             kernel, args_to_make_global = tiled_transform(kernel,
-                    program.callables_table,
-                    TilingConfiguration(configuration["gpu_cells_per_block"],
-                        configuration["gpu_threads_per_cell"],
-                        configuration["gpu_op_tile_descriptions"],
-                        configuration["gpu_quad_rowtile_lengths"],
-                        configuration["gpu_coords_to_shared"],
-                        configuration["gpu_input_to_shared"],
-                        configuration["gpu_mats_to_shared"],
-                        configuration["gpu_quad_weights_to_shared"],
-                        configuration["gpu_tiled_prefetch_of_input"],
-                        configuration["gpu_tiled_prefetch_of_quad_weights"])
-                    )
+                                                          program.callables_table,
+                                                          TilingConfiguration(configuration["gpu_cells_per_block"],
+                                                                              configuration["gpu_threads_per_cell"],
+                                                                              configuration["gpu_op_tile_descriptions"],
+                                                                              configuration["gpu_quad_rowtile_lengths"],
+                                                                              configuration["gpu_coords_to_shared"],
+                                                                              configuration["gpu_input_to_shared"],
+                                                                              configuration["gpu_mats_to_shared"],
+                                                                              configuration["gpu_quad_weights_to_shared"],
+                                                                              configuration["gpu_tiled_prefetch_of_input"],
+                                                                              configuration["gpu_tiled_prefetch_of_quad_weights"]))
         elif configuration["gpu_strategy"] == "auto_tile":
             assert args is not None
             assert argshapes is not None
             from pyop2.gpu.tile import AutoTiler
-            kernel, args_to_make_global = AutoTiler(
-                    program.with_root_kernel(kernel),
-                    configuration["gpu_planner_kernel_evals"])(args, argshapes)
+            kernel, args_to_make_global = AutoTiler(program.with_root_kernel(kernel),
+                                                    configuration["gpu_planner_kernel_evals"])(args, argshapes)
         else:
-            raise ValueError("gpu_strategy can be 'scpt',"
-                    " 'user_specified_tile' or 'auto_tile'.")
-    elif program.name in ["wrap_zero", "wrap_expression_kernel",
+            raise ValueError("gpu_strategy can be 'scpt', 'user_specified_tile' or 'auto_tile'.")
+    elif program.name in [
+            "wrap_zero", "wrap_expression_kernel",
             "wrap_expression", "wrap_pyop2_kernel_uniform_extrusion",
             "wrap_form_cell_integral_otherwise",
             "wrap_loopy_kernel_prolong",
             "wrap_loopy_kernel_restrict",
-            "wrap_loopy_kernel_inject", "wrap_copy", "wrap_inner"
-            ]:
+            "wrap_loopy_kernel_inject", "wrap_copy", "wrap_inner"]:
         from pyop2.gpu.snpt import snpt_transform
         kernel, args_to_make_global = snpt_transform(kernel,
-                    configuration["gpu_cells_per_block"])
+                                                     configuration["gpu_cells_per_block"])
     else:
         raise NotImplementedError("Transformation for '%s'." % program.name)
 

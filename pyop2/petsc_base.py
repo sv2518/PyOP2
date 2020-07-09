@@ -138,8 +138,8 @@ class DataSet(base.DataSet):
         if from_type == to_type:
             return
 
-        unknown_conversion_err = NotImplementedError("Cannot convert petsc vec"
-                " type from '{}' to '{}'.".format(from_type, to_type))
+        unknown_conversion_err = NotImplementedError("Cannot convert petsc vec type from"
+                                                     " '{}' to '{}'.".format(from_type, to_type))
 
         if from_type == 'seq':
             if to_type == 'seqcuda':
@@ -372,8 +372,7 @@ class VecAccessMixin(metaclass=abc.ABCMeta):
 class Dat(base.Dat, VecAccessMixin):
 
     def can_be_represented_as_petscvec(self):
-        return ((self.dtype == PETSc.ScalarType) and
-            self.cdim > 0)
+        return ((self.dtype == PETSc.ScalarType) and self.cdim > 0)
 
     @utils.cached_property
     def _vec(self):
@@ -392,8 +391,8 @@ class Dat(base.Dat, VecAccessMixin):
         if from_type == to_type:
             return
 
-        unknown_conversion_err = NotImplementedError("Cannot convert petsc vec"
-                " type from '{}' to '{}'.".format(from_type, to_type))
+        unknown_conversion_err = NotImplementedError("Cannot convert petsc vec type from"
+                                                     " '{}' to '{}'.".format(from_type, to_type))
 
         if from_type == 'seq':
             if to_type == 'seqcuda':
@@ -431,8 +430,7 @@ class Dat(base.Dat, VecAccessMixin):
             raise unknown_conversion_err
 
     def ensure_availability_on(self, backend):
-        self._update_petsc_vec_type(self._vec,
-                backend.PETScVecType(self.comm))
+        self._update_petsc_vec_type(self._vec, backend.PETScVecType(self.comm))
 
     @contextmanager
     def vec_context(self, access):
@@ -448,8 +446,7 @@ class Dat(base.Dat, VecAccessMixin):
         self._vec.stateIncrease()
         if self._vec.type != compute_backend.PETScVecType(self.comm):
             if configuration['only_explicit_host_device_data_transfers']:
-                raise RuntimeError("Memory location mismatch for"
-                        " '{}'.".format(self.name))
+                raise RuntimeError("Memory location mismatch for '{}'.".format(self.name))
             else:
                 self.ensure_availability_on(compute_backend)
 

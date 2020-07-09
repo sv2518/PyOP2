@@ -220,8 +220,7 @@ class Arg(object):
         elif self._is_mixed_mat:
             rows, cols = self.data.sparsity.shape
             mr, mc = self.map
-            return tuple(Arg(self.data[i, j], (mr.split[i], mc.split[j]),
-                                      self._access)
+            return tuple(Arg(self.data[i, j], (mr.split[i], mc.split[j]), self._access)
                          for i in range(rows) for j in range(cols))
         else:
             return (self,)
