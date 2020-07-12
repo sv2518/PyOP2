@@ -71,11 +71,10 @@ class Map(base.Map):
         self._values_cuda = cuda.mem_alloc(int(self._values.nbytes))
         cuda.memcpy_htod(self._values_cuda, self._values)
         self.shape = base_map.shape
-        self._name = 'cuda_copy_%d_of_%s' % (base.Map._globalcount, base_map._name)
+        self._name = 'cuda_copy_of_%s' % (base_map._name)
         self._offset = base_map._offset
         # A cache for objects built on top of this map
         self._cache = {}
-        base.Map._globalcount += 1
 
     @cached_property
     def _kernel_args_(self):
@@ -513,6 +512,18 @@ def generate_gpu_kernel(program, args=None, argshapes=None):
     # Kernel transformations
     program = program.copy(target=loopy.CudaTarget())
     kernel = program.root_kernel
+
+    # changing the address space of temps
+    def _change_aspace_tvs(tv):
+        if tv.read_only:
+            assert tv.initializer is not None
+            return tv.copy(address_space=loopy.AddressSpace.GLOBAL)
+        else:
+            return tv.copy(address_space=loopy.AddressSpace.PRIVATE)
+
+    new_tvs = {tv_name: _change_aspace_tvs(tv) for tv_name, tv in
+               kernel.temporary_variables.items()}
+    kernel = kernel.copy(temporary_variables=new_tvs)
 
     def insn_needs_atomic(insn):
         # updates to global variables are atomic
