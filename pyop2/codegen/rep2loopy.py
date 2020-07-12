@@ -324,7 +324,7 @@ def instruction_dependencies(instructions, initialisers):
     return dict((op, (names[op], dep)) for op, dep in deps.items())
 
 
-def generate(builder, wrapper_name=None):
+def generate(builder, wrapper_name=None, include_petsc=True, include_complex=True):
     if builder.layer_index is not None:
         outer_inames = frozenset([builder._loop_index.name,
                                   builder.layer_index.name])
@@ -458,7 +458,15 @@ def generate(builder, wrapper_name=None):
     # register kernel
     kernel = builder.kernel
     headers = set(kernel._headers)
-    headers = headers | set(["#include <math.h>", "#include <complex.h>", "#include <petsc.h>"])
+
+    headers = headers | set(["#include <math.h>"])
+
+    if include_petsc:
+        headers.add("#include <petsc.h>")
+
+    if include_complex:
+        headers.add("#include <complex.h>")
+
     preamble = "\n".join(sorted(headers))
 
     from coffee.base import Node

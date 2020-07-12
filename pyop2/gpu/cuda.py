@@ -303,7 +303,7 @@ class JITModule(base.JITModule):
             builder.add_argument(arg)
         builder.set_kernel(self._kernel)
 
-        wrapper = generate(builder)
+        wrapper = generate(builder, include_petsc=False, include_complex=False)
 
         code, processed_program, args_to_make_global = generate_gpu_kernel(wrapper, self.args, self.argshapes)
         for i, arg_to_make_global in enumerate(args_to_make_global):
