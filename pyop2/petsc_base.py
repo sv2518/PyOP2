@@ -489,7 +489,7 @@ class Dat(base.Dat, VecAccessMixin):
             # {{{ ensuring correctness of values in 'self._data'
 
             with self.vec as v:
-                if v.type == 'seq':
+                if v.type in ['seq', 'mpi']:
                     pass
                 elif v.type == 'seqcuda':
                     v.restoreCUDAHandle(v.getCUDAHandle())
