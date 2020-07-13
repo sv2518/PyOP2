@@ -42,7 +42,7 @@ from pyop2 import base
 from pyop2 import mpi
 from pyop2 import sparsity
 from pyop2 import utils
-from pyop2.base import _make_object, Subset
+from pyop2.base import _make_object, Subset, Arg
 from pyop2.mpi import collective
 from pyop2.profiling import timed_region
 from pyop2.configuration import configuration
@@ -937,13 +937,12 @@ class Mat(base.Mat):
         if path == (None, None):
             lgmaps, = lgmaps
             assert all(l is None for l in lgmaps)
-            return _make_object('Arg',
-                                data=self.handle.getPythonContext().global_,
-                                access=access)
+            return Arg(data=self.handle.getPythonContext().global_,
+                       access=access)
         elif None in path:
             thispath = path[0] or path[1]
-            return _make_object('Arg', data=self.handle.getPythonContext().dat,
-                                map=thispath, access=access)
+            return Arg(data=self.handle.getPythonContext().dat,
+                       map=thispath, access=access)
         else:
             return super().__call__(access, path, lgmaps=lgmaps, unroll_map=unroll_map)
 
