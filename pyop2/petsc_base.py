@@ -146,11 +146,23 @@ class DataSet(base.DataSet):
                 data = vec.array.copy()
                 vec.setType('seqcuda')
                 vec.setArray(data)
+            elif to_type == 'seqviennacl':
+                data = vec.array.copy()
+                vec.setType('seqviennacl')
+                vec.setArray(data)
             else:
                 raise unknown_conversion_err
         elif from_type == 'seqcuda':
             if to_type == 'seq':
                 vec.restoreCUDAHandle(vec.getCUDAHandle())
+                data = vec.array.copy()
+                vec.setType('seq')
+                vec.setArray(data)
+            else:
+                raise unknown_conversion_err
+        elif from_type == 'seqviennacl':
+            if to_type == 'seq':
+                vec.restoreCLMemHandle()
                 data = vec.array.copy()
                 vec.setType('seq')
                 vec.setArray(data)
@@ -401,6 +413,12 @@ class Dat(base.Dat, VecAccessMixin):
                 self._data = vec.array.reshape(self._data.shape).copy()
                 vec.setType('seqcuda')
                 vec.setArray(self._data[:size[0]])
+            elif to_type == 'seqviennacl':
+                # FIXME:  Why is the reshape needed?
+                size = self.dataset.layout_vec.getSizes()
+                self._data = vec.array.reshape(self._data.shape).copy()
+                vec.setType('seqviennacl')
+                vec.setArray(self._data[:size[0]])
             else:
                 raise unknown_conversion_err
         elif from_type == 'seqcuda':
@@ -408,6 +426,16 @@ class Dat(base.Dat, VecAccessMixin):
                 # FIXME:  Why is the reshape needed?
                 size = self.dataset.layout_vec.getSizes()
                 vec.restoreCUDAHandle(vec.getCUDAHandle())
+                self._data = vec.array.reshape(self._data.shape).copy()
+                vec.setType('seq')
+                vec.setArray(self._data[:size[0]])
+            else:
+                raise unknown_conversion_err
+        elif from_type == 'seqviennacl':
+            if to_type == 'seq':
+                # FIXME:  Why is the reshape needed?
+                size = self.dataset.layout_vec.getSizes()
+                vec.restoreCLMemHandle()
                 self._data = vec.array.reshape(self._data.shape).copy()
                 vec.setType('seq')
                 vec.setArray(self._data[:size[0]])
@@ -425,7 +453,6 @@ class Dat(base.Dat, VecAccessMixin):
                 raise unknown_conversion_err
             else:
                 raise unknown_conversion_err
-
         else:
             raise unknown_conversion_err
 
@@ -456,6 +483,8 @@ class Dat(base.Dat, VecAccessMixin):
 
             if self._vec.type == 'seqcuda':
                 self._vec.restoreCUDAHandle(self._vec.getCUDAHandle())
+            if self._vec.type == 'seqviennacl':
+                self._vec.restoreCLMemHandle()
 
     @property
     def _kernel_args_(self):
@@ -466,6 +495,10 @@ class Dat(base.Dat, VecAccessMixin):
                     return (self._data.ctypes.data, )
                 elif petsc_vec.type == 'seqcuda':
                     return (petsc_vec.getCUDAHandle(), )
+                elif petsc_vec.type == 'seqviennacl':
+                    import pyopencl as cl
+                    return (cl.MemoryObject.from_int_ptr(petsc_vec.getCLMemHandle(),
+                                                         retain=False),)
                 else:
                     raise NotImplementedError()
         else:
