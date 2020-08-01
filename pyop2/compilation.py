@@ -508,6 +508,104 @@ class CUDACompiler(Compiler):
         return fn
 
 
+class OpenCLCompiler(Compiler):
+    """Compiler for the OpenCL backend.
+
+    :arg cppargs: A list of arguments to pass to the nvcc compiler
+         (optional).
+    :arg ldargs: A list of arguments to pass to the linker (optional).
+    :arg cpp: Are we actually using the C++ compiler?
+    :kwarg comm: Optional communicator to compile the code on (only
+    rank 0 compiles code) (defaults to COMM_WORLD)."""
+    def __init__(self, cppargs=[], ldargs=[], cpp=False, comm=None):
+        from pyop2.gpu.opencl import opencl_backend
+        ctx = opencl_backend.context
+        cc = ', '.join(dev.opencl_c_version for dev in ctx.devices)
+        super(OpenCLCompiler, self).__init__(cc=cc, cppargs=cppargs, ldargs=[],
+                                             cpp=False, comm=comm)
+
+    @property
+    def workaround_cflags(self):
+        return []
+
+    @collective
+    def get_cl_program(self, jitmodule):
+        """Build an OpenCL Program.
+
+        :arg jitmodule: The JIT Module which can generate the code to compile.
+        :arg extension: extension of the source file (c, cpp).
+
+        Returns a :class:`pyopencl.Program` corresponding to the *jitmodule*.
+        """
+        if self.comm.size > 1:
+            # Needs a bit more care. Individual ranks might have different
+            # devices and might need individual compilation.
+            raise NotImplementedError()
+        import pyopencl as cl
+        from pyop2.gpu.opencl import opencl_backend
+        ctx = opencl_backend.context
+
+        # Determine cache key
+        hsh = md5(str(jitmodule.cache_key).encode())
+        hsh.update(self._cc.encode())
+        hsh.update("".join(self._cppargs).encode())
+        hsh.update("".join(self._ldargs).encode())
+
+        basename = hsh.hexdigest()
+
+        cachedir = configuration['cache_dir']
+
+        dirpart, basename = basename[:2], basename[2:]
+        cachedir = os.path.join(cachedir, dirpart)
+        cname = os.path.join(cachedir, "%s_code.cl" % basename)
+
+        if configuration['check_src_hashes'] or configuration['debug']:
+            matching = self.comm.allreduce(basename, op=_check_op)
+            if matching != basename:
+                # Dump all src code to disk for debugging
+                output = os.path.join(cachedir, "mismatching-kernels")
+                srcfile = os.path.join(output, "src-rank%d.c" % self.comm.rank)
+                if self.comm.rank == 0:
+                    os.makedirs(output, exist_ok=True)
+                self.comm.barrier()
+                with open(srcfile, "w") as f:
+                    f.write(jitmodule.code_to_compile)
+                self.comm.barrier()
+                raise CompilationError("Generated code differs across ranks (see output in %s)" % output)
+
+        if os.path.isfile(cname):
+            # Are we in the cache?
+            with open(cname, 'r') as f:
+                prg = cl.Program(ctx, f.read()).build(options=self._cppargs, cache_dir=cachedir)
+        else:
+            # No, let's go ahead and build
+            if self.comm.rank == 0:
+                # No need to do this on all ranks
+                os.makedirs(cachedir, exist_ok=True)
+                with progress(INFO, 'Compiling wrapper'):
+                    # make sure that compiles successfully before writing to file
+                    prg = cl.Program(ctx, jitmodule.code_to_compile).build(options=self._cppargs,
+                                                                           cache_dir=cachedir)
+                    with open(cname, "w") as f:
+                        f.write(jitmodule.code_to_compile)
+            self.comm.barrier()
+
+        return prg
+
+    def get_function(self, code, extension, fn_name, argtypes=None, restype=None):
+        """
+        .. warning::
+            Callee does not prepare the function
+        """
+        import pyopencl as cl
+
+        assert argtypes is None
+        assert restype is None
+        prg = self.get_cl_program(code)
+        cl_knl = cl.Kernel(prg, fn_name)
+        return cl_knl
+
+
 class LinuxIntelCompiler(Compiler):
     """The intel compiler for building a shared library on linux systems.
 
@@ -578,6 +676,8 @@ def load(jitmodule, extension, fn_name, cppargs=[], ldargs=[],
             compiler = LinuxCompiler(cppargs, ldargs, cpp=cpp, comm=comm)
         elif compiler == 'nvcc':
             compiler = CUDACompiler(cppargs, ldargs, cpp=cpp, comm=comm)
+        elif compiler == 'opencl':
+            compiler = OpenCLCompiler(cppargs, ldargs, cpp=cpp, comm=comm)
         else:
             raise CompilationError("Unrecognized compiler name '%s'" % compiler)
     elif platform.find('darwin') == 0:

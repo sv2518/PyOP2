@@ -34,7 +34,6 @@
 """OP2 OpenCL backend."""
 
 import os
-import ctypes
 from copy import deepcopy as dcopy
 
 from hashlib import md5
@@ -53,13 +52,25 @@ import numpy
 from pytools import memoize_method
 from pyop2.petsc_base import PETSc, AbstractPETScBackend
 from pyop2.logger import ExecTimeNoter
-from pyop2.utils import cached_property, get_petsc_dir
+from pyop2.utils import cached_property
 
 import pyopencl as cl
-import numpy as np
 
 
-class Map(Map):
+def cl_buffer_from_numpy_array(ary, mode='rw'):
+    mf = cl.mem_flags
+    if mode == 'r':
+        access_flg = mf.READ_ONLY
+    else:
+        assert mode == 'rw'
+        access_flg = mf.READ_WRITE
+
+    ctx = opencl_backend.context
+    ary_on_device = cl.Buffer(ctx, access_flg | mf.COPY_HOST_PTR, hostbuf=ary)
+    return ary_on_device
+
+
+class Map(base.Map):
 
     def __init__(self, base_map):
         assert type(base_map) == base.Map
@@ -70,7 +81,7 @@ class Map(Map):
         # maps indexed as `map[icell, idof]`
         self._values = base_map._values
         # FIXME: actually initialize values_opencl
-        self._values_opencl = 1/0
+        self._values_opencl = cl_buffer_from_numpy_array(self._values, 'r')
         self.shape = base_map.shape
         self._name = 'opencl_copy_of_%s' % (base_map._name)
         self._offset = base_map._offset
@@ -80,7 +91,7 @@ class Map(Map):
     @cached_property
     def _kernel_args_(self):
         # FIXME: Extract this from self._values_opencl
-        raise NotImplementedError()
+        return (self._values_opencl,)
 
 
 class ExtrudedSet(base.ExtrudedSet):
@@ -89,8 +100,9 @@ class ExtrudedSet(base.ExtrudedSet):
     """
     @cached_property
     def _kernel_args_(self):
-        # FIXME: copy 'self.layers_array' to device and return its pointer
-        raise NotImplementedError()
+        device_layers_array = cl_buffer_from_numpy_array(self.layers_array,
+                                                         'r')
+        return (device_layers_array,)
 
 
 class Subset(base.Subset):
@@ -99,8 +111,8 @@ class Subset(base.Subset):
     """
     @cached_property
     def _kernel_args_(self):
-        # FIXME: copy 'self.indices' to device and return its pointer
-        raise NotImplementedError()
+        device_indices = cl_buffer_from_numpy_array(self._indices)
+        return (device_indices, )
 
 
 class DataSet(petsc_base.DataSet):
@@ -110,12 +122,12 @@ class DataSet(petsc_base.DataSet):
         size = (self.size * self.cdim, None)
         vec = PETSc.Vec().create(comm=self.comm)
         vec.setSizes(size, bsize=self.cdim)
-        vec.setType('seqviennacl')
+        vec.setType('viennacl')
         vec.setUp()
         return vec
 
 
-class Dat(petsc_Dat):
+class Dat(petsc_base.Dat):
     """
     Dat for OpenCL.
     """
@@ -130,7 +142,7 @@ class Dat(petsc_Dat):
         size = self.dataset.layout_vec.getSizes()
         opencl_vec = PETSc.Vec().create(self.comm)
         opencl_vec.setSizes(size=size, bsize=self.cdim)
-        opencl_vec.setType('seqviennacl')
+        opencl_vec.setType('viennacl')
         opencl_vec.setArray(self._data[:size[0]])
 
         return opencl_vec
@@ -139,8 +151,8 @@ class Dat(petsc_Dat):
 class Global(petsc_base.Global):
     @cached_property
     def _kernel_args_(self):
-        # FIXME: transfer 'self._data' to device.
-        raise NotImplementedError()
+        device_data = cl_buffer_from_numpy_array(self._data, 'r')
+        return device_data
 
 
 class JITModule(base.JITModule):
@@ -157,7 +169,7 @@ class JITModule(base.JITModule):
 
         .. warning ::
 
-           Note to implementors.  This object is *cached*, and therefore
+           Note to implementers.  This object is *cached*, and therefore
            should not hold any long term references to objects that
            you want to be collected.  In particular, after the
            ``args`` have been inspected to produce the compiled code,
@@ -201,13 +213,6 @@ class JITModule(base.JITModule):
                     configuration["gpu_tiled_prefetch_of_quad_weights"],)
         elif configuration["gpu_strategy"] == "auto_tile":
             key += (configuration["gpu_planner_kernel_evals"],)
-            assert isinstance(args[1], Set)
-            problem_size = args[1].size
-            # FIXME: is this a good heuristic?
-            # perform experiments to verify it.
-            # Also this number should not exceed certain number i.e. when the
-            # device would be saturated.
-            key += (min(int(numpy.log2(problem_size)), 18),)
         else:
             raise NotImplementedError('For strategy: {}'.format(
                 configuration["gpu_strategy"]))
@@ -235,29 +240,23 @@ class JITModule(base.JITModule):
     @cached_property
     def get_args_marked_for_globals(self):
         args_to_make_global = []
-        for i in range(len(self._fun.arg_format)-len(self.argtypes)):
+        for i in range(self.num_args_to_make_global):
             args_to_make_global.append(numpy.load(self.ith_added_global_arg_i(i)))
 
-        const_args_as_globals = tuple(cuda.mem_alloc(arg.nbytes)
+        const_args_as_globals = tuple(cl_buffer_from_numpy_array(arg, 'r')
                                       for arg in args_to_make_global)
-        for arg_gpu, arg in zip(const_args_as_globals, args_to_make_global):
-            cuda.memcpy_htod(arg_gpu, arg)
-
-        evt = cuda.Event()
-        evt.record()
-        evt.synchronize()
 
         return const_args_as_globals
 
     @cached_property
     def config_file_path(self):
         cachedir = configuration['cache_dir']
-        return os.path.join(cachedir, '{}_num_args_to_load_glens_llens'.format(self.get_encoded_cache_key))
+        return os.path.join(cachedir, '{}_num_args_to_load_glens_llens_opencl'.format(self.get_encoded_cache_key))
 
     @memoize_method
     def ith_added_global_arg_i(self, i):
         cachedir = configuration['cache_dir']
-        return os.path.join(cachedir, '{}_dat_{}.npy'.format(self.get_encoded_cache_key, i))
+        return os.path.join(cachedir, '{}_opencl_dat_{}.npy'.format(self.get_encoded_cache_key, i))
 
     @collective
     def __call__(self, *args):
@@ -270,7 +269,7 @@ class JITModule(base.JITModule):
             self._initialized = True
             return self.__call__(*args)
 
-        return self._fun.prepared_call(grid, block, *(args+extra_global_args))
+        return self._fun(opencl_backend.queue, grid, block, *(args+extra_global_args), g_times_l=True)
 
     @cached_property
     def _wrapper_name(self):
@@ -298,7 +297,7 @@ class JITModule(base.JITModule):
             builder.add_argument(arg)
         builder.set_kernel(self._kernel)
 
-        wrapper = generate(builder, include_petsc=False, include_complex=False)
+        wrapper = generate(builder, include_math=False, include_petsc=False, include_complex=False)
 
         code, processed_program, args_to_make_global = generate_gpu_kernel(wrapper, self.args, self.argshapes, 'opencl')
         for i, arg_to_make_global in enumerate(args_to_make_global):
@@ -322,8 +321,8 @@ class JITModule(base.JITModule):
         if not hasattr(self, '_args'):
             raise RuntimeError("JITModule has no args associated with it, should never happen")
 
-        compiler = "nvcc"
-        extension = "cu"
+        compiler = "opencl"
+        extension = "cl"
         self._fun = compilation.load(self,
                                      extension,
                                      self._wrapper_name,
@@ -332,10 +331,8 @@ class JITModule(base.JITModule):
                                      compiler=compiler,
                                      comm=self.comm)
 
-        type_map = dict([(ctypes.c_void_p, "P"), (ctypes.c_int, "i")])
-        argtypes = "".join(type_map[t] for t in self.argtypes)
-
-        self._fun.prepare(argtypes+"P"*self.num_args_to_make_global)
+        self._fun.set_scalar_arg_dtypes([IntType, IntType]
+                                        + [None]*(len(self.argtypes[2:])+self.num_args_to_make_global))
 
         # Blow away everything we don't need any more
         del self.args
@@ -357,9 +354,8 @@ class JITModule(base.JITModule):
                 for k, t in zip(map_._kernel_args_, map_._argtypes_):
                     if k in seen:
                         continue
-                    argtypes += (ctypes.c_void_p,)
+                    argtypes += (t,)
                     seen.add(k)
-
         return argtypes
 
     @cached_property
@@ -477,6 +473,22 @@ class OpenCLBackend(AbstractPETScBackend):
     Mat = petsc_base.Mat
     Global = Global
     GlobalDataSet = petsc_base.GlobalDataSet
+
+    @cached_property
+    def context(self):
+        x = PETSc.Vec().create(PETSc.COMM_WORLD)
+        x.setType('viennacl')
+        x.setSizes(size=10)
+        ctx_ptr = x.getCLContextHandle()
+        return cl.Context.from_int_ptr(ctx_ptr, retain=False)
+
+    @cached_property
+    def queue(self):
+        x = PETSc.Vec().create(PETSc.COMM_WORLD)
+        x.setType('viennacl')
+        x.setSizes(size=10)
+        queue_ptr = x.getCLQueueHandle()
+        return cl.CommandQueue.from_int_ptr(queue_ptr, retain=False)
 
     def PETScVecType(self, comm):
         if comm.size == 1:
