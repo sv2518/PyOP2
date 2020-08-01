@@ -57,7 +57,7 @@ from pyop2.logger import ExecTimeNoter
 
 
 class Map(base.Map):
-    """Map for CuDA"""
+    """Map for CUDA"""
 
     def __init__(self, base_map):
         assert type(base_map) == base.Map
@@ -109,7 +109,7 @@ class DataSet(petsc_base.DataSet):
         size = (self.size * self.cdim, None)
         vec = PETSc.Vec().create(comm=self.comm)
         vec.setSizes(size, bsize=self.cdim)
-        vec.setType('seqcuda')
+        vec.setType('cuda')
         vec.setUp()
         return vec
 
@@ -129,7 +129,7 @@ class Dat(petsc_base.Dat):
         size = self.dataset.layout_vec.getSizes()
         cuda_vec = PETSc.Vec().create(self.comm)
         cuda_vec.setSizes(size=size, bsize=self.cdim)
-        cuda_vec.setType('seqcuda')
+        cuda_vec.setType('cuda')
         cuda_vec.setArray(self._data[:size[0]])
 
         return cuda_vec
