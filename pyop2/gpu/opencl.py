@@ -152,7 +152,7 @@ class Global(petsc_base.Global):
     @cached_property
     def _kernel_args_(self):
         device_data = cl_buffer_from_numpy_array(self._data, 'r')
-        return device_data
+        return (device_data, )
 
 
 class JITModule(base.JITModule):
