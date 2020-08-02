@@ -497,7 +497,7 @@ class Dat(base.Dat, VecAccessMixin):
                     return (petsc_vec.getCUDAHandle(), )
                 elif petsc_vec.type == 'seqviennacl':
                     import pyopencl as cl
-                    return (cl.MemoryObject.from_int_ptr(petsc_vec.getCLMemHandle(),
+                    return (cl.MemoryObject.from_int_ptr(petsc_vec.getCLMemHandle('rw'),
                                                          retain=False),)
                 else:
                     raise NotImplementedError()
