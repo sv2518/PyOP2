@@ -45,7 +45,6 @@ from pyop2 import utils
 from pyop2.base import _make_object, Subset, Arg
 from pyop2.mpi import collective
 from pyop2.profiling import timed_region
-from pyop2.configuration import configuration
 from pyop2.backend import AbstractComputeBackend
 
 
@@ -125,56 +124,17 @@ class DataSet(base.DataSet):
 
     @utils.cached_property
     def _layout_vec(self):
+        from pyop2.op2 import compute_backend
         vec = PETSc.Vec().create(comm=self.comm)
         size = (self.size * self.cdim, None)
         vec.setSizes(size, bsize=self.cdim)
+        vec.setType(compute_backend.PETScVecType)
         vec.setUp()
         return vec
-
-    def _update_petsc_vec_type(self, vec):
-        from pyop2.op2 import compute_backend
-        to_type = compute_backend.PETScVecType(self.comm)
-        from_type = vec.type
-        if from_type == to_type:
-            return
-
-        unknown_conversion_err = NotImplementedError("Cannot convert petsc vec type from"
-                                                     " '{}' to '{}'.".format(from_type, to_type))
-
-        if from_type == 'seq':
-            if to_type == 'seqcuda':
-                data = vec.array.copy()
-                vec.setType('seqcuda')
-                vec.setArray(data)
-            elif to_type == 'seqviennacl':
-                data = vec.array.copy()
-                vec.setType('seqviennacl')
-                vec.setArray(data)
-            else:
-                raise unknown_conversion_err
-        elif from_type == 'seqcuda':
-            if to_type == 'seq':
-                vec.restoreCUDAHandle(vec.getCUDAHandle())
-                data = vec.array.copy()
-                vec.setType('seq')
-                vec.setArray(data)
-            else:
-                raise unknown_conversion_err
-        elif from_type == 'seqviennacl':
-            if to_type == 'seq':
-                vec.restoreCLMemHandle()
-                data = vec.array.copy()
-                vec.setType('seq')
-                vec.setArray(data)
-            else:
-                raise unknown_conversion_err
-        else:
-            raise unknown_conversion_err
 
     @property
     def layout_vec(self):
         """A PETSc Vec compatible with the dof layout of this DataSet."""
-        self._update_petsc_vec_type(self._layout_vec)
         return self._layout_vec
 
     @utils.cached_property
@@ -382,7 +342,6 @@ class VecAccessMixin(metaclass=abc.ABCMeta):
 
 
 class Dat(base.Dat, VecAccessMixin):
-
     def can_be_represented_as_petscvec(self):
         return ((self.dtype == PETSc.ScalarType) and self.cdim > 0)
 
@@ -394,70 +353,14 @@ class Dat(base.Dat, VecAccessMixin):
         # carry around extra unnecessary data.
         # But use getSizes to save an Allreduce in computing the
         # global size.
+        from pyop2.op2 import compute_backend
         size = self.dataset.layout_vec.getSizes()
-        data = self._data[:size[0]]
-        return PETSc.Vec().createWithArray(data, size=size, bsize=self.cdim, comm=self.comm)
+        vec = PETSc.Vec().create(self.comm)
+        vec.setSizes(size=size, bsize=self.cdim)
+        vec.setType(compute_backend.PETScVecType)
+        vec.setArray(self._data[:size[0]])
 
-    def _update_petsc_vec_type(self, vec, to_type):
-        from_type = vec.type
-        if from_type == to_type:
-            return
-
-        unknown_conversion_err = NotImplementedError("Cannot convert petsc vec type from"
-                                                     " '{}' to '{}'.".format(from_type, to_type))
-
-        if from_type == 'seq':
-            if to_type == 'seqcuda':
-                # FIXME:  Why is the reshape needed?
-                size = self.dataset.layout_vec.getSizes()
-                self._data = vec.array.reshape(self._data.shape).copy()
-                vec.setType('seqcuda')
-                vec.setArray(self._data[:size[0]])
-            elif to_type == 'seqviennacl':
-                # FIXME:  Why is the reshape needed?
-                size = self.dataset.layout_vec.getSizes()
-                self._data = vec.array.reshape(self._data.shape).copy()
-                vec.setType('seqviennacl')
-                vec.setArray(self._data[:size[0]])
-            else:
-                raise unknown_conversion_err
-        elif from_type == 'seqcuda':
-            if to_type == 'seq':
-                # FIXME:  Why is the reshape needed?
-                size = self.dataset.layout_vec.getSizes()
-                vec.restoreCUDAHandle(vec.getCUDAHandle())
-                self._data = vec.array.reshape(self._data.shape).copy()
-                vec.setType('seq')
-                vec.setArray(self._data[:size[0]])
-            else:
-                raise unknown_conversion_err
-        elif from_type == 'seqviennacl':
-            if to_type == 'seq':
-                # FIXME:  Why is the reshape needed?
-                size = self.dataset.layout_vec.getSizes()
-                vec.restoreCLMemHandle()
-                self._data = vec.array.reshape(self._data.shape).copy()
-                vec.setType('seq')
-                vec.setArray(self._data[:size[0]])
-            else:
-                raise unknown_conversion_err
-        elif from_type == 'mpi':
-            if to_type == 'mpicuda':
-                # TODO
-                raise unknown_conversion_err
-            else:
-                raise unknown_conversion_err
-        elif from_type == 'mpicuda':
-            if to_type == 'mpi':
-                # TODO
-                raise unknown_conversion_err
-            else:
-                raise unknown_conversion_err
-        else:
-            raise unknown_conversion_err
-
-    def ensure_availability_on(self, backend):
-        self._update_petsc_vec_type(self._vec, backend.PETScVecType(self.comm))
+        return vec
 
     @contextmanager
     def vec_context(self, access):
@@ -468,72 +371,16 @@ class Dat(base.Dat, VecAccessMixin):
         # to return immediately if the state counter is unchanged.
         # Since we've updated the data behind their back, we need to
         # change that state counter.
-
-        from pyop2.op2 import compute_backend
         self._vec.stateIncrease()
-        if self._vec.type != compute_backend.PETScVecType(self.comm):
-            if configuration['only_explicit_host_device_data_transfers']:
-                raise RuntimeError("Memory location mismatch for '{}'.".format(self.name))
-            else:
-                self.ensure_availability_on(compute_backend)
-
         yield self._vec
         if access is not base.READ:
             self.halo_valid = False
 
-            if self._vec.type == 'seqcuda':
-                self._vec.restoreCUDAHandle(self._vec.getCUDAHandle())
-            if self._vec.type == 'seqviennacl':
-                self._vec.restoreCLMemHandle()
+    def is_available_on_device(self):
+        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
 
-    @property
-    def _kernel_args_(self):
-        if self.can_be_represented_as_petscvec():
-            # In this case we can allocate a petsc vec
-            with self.vec as petsc_vec:
-                if petsc_vec.type in ['seq', 'mpi']:
-                    return (self._data.ctypes.data, )
-                elif petsc_vec.type == 'seqcuda':
-                    return (petsc_vec.getCUDAHandle(), )
-                elif petsc_vec.type == 'seqviennacl':
-                    import pyopencl as cl
-                    return (cl.MemoryObject.from_int_ptr(petsc_vec.getCLMemHandle('rw'),
-                                                         retain=False),)
-                else:
-                    raise NotImplementedError()
-        else:
-            from pyop2.sequential import CPUBackend
-            from pyop2.op2 import compute_backend
-            if isinstance(compute_backend, CPUBackend):
-                return (self._data.ctypes.data, )
-            else:
-                # FIXME: Should decide whether switching backends of
-                # non-petscvec backed Dats should be allowed.
-                raise NotImplementedError()
-
-    @collective
-    @property
-    def data(self):
-        if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
-            raise RuntimeError("Illegal access: no data associated with this Dat!")
-        self.halo_valid = False
-
-        if self.can_be_represented_as_petscvec():
-            # {{{ ensuring correctness of values in 'self._data'
-
-            with self.vec as v:
-                if v.type in ['seq', 'mpi']:
-                    pass
-                elif v.type == 'seqcuda':
-                    v.restoreCUDAHandle(v.getCUDAHandle())
-                else:
-                    raise NotImplementedError("Unknown vec type %s." % v.type)
-
-            # }}}
-
-        v = self._data[:self.dataset.size].view()
-        v.setflags(write=True)
-        return v
+    def is_available_on_host(self):
+        return bool(self.get_availability() & base.AVAILABLE_ON_HOST_ONLY)
 
 
 class MixedDat(base.MixedDat, VecAccessMixin):

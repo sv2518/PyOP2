@@ -108,6 +108,21 @@ MAX = Access.MAX
 operation. OP2 is responsible for reducing over the different kernel
 invocations."""
 
+
+class DataAvailability(IntEnum):
+    """
+    Indicates whether the device or host contains valid data.
+    """
+    AVAILABLE_ON_HOST_ONLY = 1
+    AVAILABLE_ON_DEVICE_ONLY = 2
+    AVAILABLE_ON_BOTH = 3
+
+
+AVAILABLE_ON_HOST_ONLY = DataAvailability.AVAILABLE_ON_HOST_ONLY
+AVAILABLE_ON_DEVICE_ONLY = DataAvailability.AVAILABLE_ON_DEVICE_ONLY
+AVAILABLE_ON_BOTH = DataAvailability.AVAILABLE_ON_BOTH
+
+
 # Data API
 
 

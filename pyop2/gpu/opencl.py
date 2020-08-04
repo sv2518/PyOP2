@@ -37,11 +37,13 @@ import os
 from copy import deepcopy as dcopy
 
 from hashlib import md5
+from contextlib import contextmanager
 
 from pyop2.datatypes import IntType, as_ctypes
 from pyop2 import base
 from pyop2 import compilation
 from pyop2 import petsc_base
+from pyop2 import sequential
 from pyop2.exceptions import *  # noqa: F401
 from pyop2.mpi import collective
 from pyop2.profiling import timed_region
@@ -51,7 +53,6 @@ from pyop2.configuration import configuration
 import numpy
 from pytools import memoize_method
 from pyop2.petsc_base import PETSc, AbstractPETScBackend
-from pyop2.logger import ExecTimeNoter
 from pyop2.utils import cached_property
 
 import pyopencl as cl
@@ -72,87 +73,302 @@ def cl_buffer_from_numpy_array(ary, mode='rw'):
 
 class Map(base.Map):
 
-    def __init__(self, base_map):
-        assert type(base_map) == base.Map
-        self._iterset = base_map._iterset
-        self._toset = base_map._toset
-        self.comm = base_map.comm
-        self._arity = base_map._arity
-        # maps indexed as `map[icell, idof]`
-        self._values = base_map._values
-        # FIXME: actually initialize values_opencl
-        self._values_opencl = cl_buffer_from_numpy_array(self._values, 'r')
-        self.shape = base_map.shape
-        self._name = 'opencl_copy_of_%s' % (base_map._name)
-        self._offset = base_map._offset
-        # A cache for objects built on top of this map
-        self._cache = {}
+    def __init__(self, *args, **kwargs):
+        super(Map, self).__init__(*args, **kwargs)
+        self._opencl_values = None
 
-    @cached_property
+    def get_availability(self):
+        if self._opencl_values is None:
+            return base.AVAILABLE_ON_HOST_ONLY
+
+        return base.AVAILABLE_ON_BOTH
+
+    def ensure_availability_on_device(self):
+        if self._opencl_values is None:
+            self._opencl_values = cl_buffer_from_numpy_array(self._values, 'r')
+
+    def ensure_availability_on_host(self):
+        # Map once initialized is not over-written so always available
+        # on host.
+        pass
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
+
+    @property
     def _kernel_args_(self):
-        # FIXME: Extract this from self._values_opencl
-        return (self._values_opencl,)
+        if opencl_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Map unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+
+            return (self._opencl_values,)
+        else:
+            return super(Map, self)._kernel_args_
 
 
 class ExtrudedSet(base.ExtrudedSet):
     """
     ExtrudedSet for OpenCL.
     """
-    @cached_property
+
+    def __init__(self, *args, **kwargs):
+        super(ExtrudedSet, self).__init__(*args, **kwargs)
+        self.opencl_layers_array = None
+
+    def get_availability(self):
+        if self.opencl_layers_array is None:
+            return base.AVAILABLE_ON_HOST_ONLY
+
+        return base.AVAILABLE_ON_BOTH
+
+    def ensure_availability_on_device(self):
+        if self.opencl_layers_array is None:
+            self.opencl_layers_array = cl_buffer_from_numpy_array(self.layers_array, 'r')
+
+    def ensure_availability_on_host(self):
+        # ExtrudedSet once initialized is not over-written so always available
+        # on host.
+        pass
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
+
+    @property
     def _kernel_args_(self):
-        device_layers_array = cl_buffer_from_numpy_array(self.layers_array,
-                                                         'r')
-        return (device_layers_array,)
+        if opencl_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("ExtrudedSet unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+
+            return (self.opencl_layers_array,)
+        else:
+            return super(ExtrudedSet, self)._kernel_args_
 
 
 class Subset(base.Subset):
     """
     Subset for OpenCL.
     """
-    @cached_property
+    def __init__(self, *args, **kwargs):
+        super(Subset, self).__init__(*args, **kwargs)
+        self._opencl_indices = None
+
+    def get_availability(self):
+        if self._opencl_indices is None:
+            return base.AVAILABLE_ON_HOST_ONLY
+
+        return base.AVAILABLE_ON_BOTH
+
+    def ensure_availability_on_device(self):
+        if self._opencl_indices is None:
+            self._opencl_indices = cl_buffer_from_numpy_array(self._indices, 'r')
+
+    def ensure_availability_on_host(self):
+        # Subset once initialized is not over-written so always available
+        # on host.
+        pass
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
+
+    @property
     def _kernel_args_(self):
-        device_indices = cl_buffer_from_numpy_array(self._indices)
-        return (device_indices, )
+        if opencl_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Subset unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+
+            return (self._opencl_indices,)
+        else:
+            return super(Subset, self)._kernel_args_
 
 
 class DataSet(petsc_base.DataSet):
-    @cached_property
-    def _layout_vec(self):
-        """A PETSc Vec compatible with the dof layout of this DataSet."""
-        size = (self.size * self.cdim, None)
-        vec = PETSc.Vec().create(comm=self.comm)
-        vec.setSizes(size, bsize=self.cdim)
-        vec.setType('viennacl')
-        vec.setUp()
-        return vec
+    """
+    At the moment I don't think there should be any over-riding needed.
+    """
 
 
 class Dat(petsc_base.Dat):
     """
     Dat for OpenCL.
     """
-    @cached_property
-    def _vec(self):
-        assert self.dtype == PETSc.ScalarType, \
-            "Can't create Vec with type %s, must be %s" % (self.dtype, PETSc.ScalarType)
-        # Can't duplicate layout_vec of dataset, because we then
-        # carry around extra unnecessary data.
-        # But use getSizes to save an Allreduce in computing the
-        # global size.
-        size = self.dataset.layout_vec.getSizes()
-        opencl_vec = PETSc.Vec().create(self.comm)
-        opencl_vec.setSizes(size=size, bsize=self.cdim)
-        opencl_vec.setType('viennacl')
-        opencl_vec.setArray(self._data[:size[0]])
+    def __init__(self, *args, **kwargs):
+        super(Dat, self).__init__(*args, **kwargs)
+        # opencl_data, offload_mask: used only when cannot be represented as petscvec
+        self._opencl_data = cl_buffer_from_numpy_array(self._data, 'rw')
+        self.availability_flag = base.AVAILABLE_ON_BOTH
 
-        return opencl_vec
+    @contextmanager
+    def vec_context(self, access):
+        r"""A context manager for a :class:`PETSc.Vec` from a :class:`Dat`.
+
+        :param access: Access descriptor: READ, WRITE, or RW."""
+        # PETSc Vecs have a state counter and cache norm computations
+        # to return immediately if the state counter is unchanged.
+        # Since we've updated the data behind their back, we need to
+        # change that state counter.
+        self._vec.stateIncrease()
+
+        if opencl_backend.offloading:
+            self._vec.bindToCPU(False)
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Dat unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+        else:
+            if not self.is_available_on_host():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Dat unavailable on host. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_host()
+            self._vec.bindToCPU(True)
+
+        yield self._vec
+
+        if access is not base.READ:
+            self.halo_valid = False
+            self._vec.restoreCLMemHandle()  # let petsc know that GPU data has been altered
+
+    def get_availability(self):
+        # FIXME: THis needs to be fixed
+        return base.AVAILABLE_ON_HOST_ONLY
+        if self.can_be_represented_as_petscvec():
+            with self.vec_ro as v:
+                return DataAvailability(v.getOffloadMask())
+        else:
+            return self.availability_flag
+
+    def ensure_availability_on_device(self):
+        if self.can_be_represented_as_petscvec():
+            self._vec.getCLMemHandle('r')  # performs a host->device transfer if needed
+        else:
+            if not self.is_available_on_host():
+                cl.enqueue_copy(opencl_backend.queue, self._opencl_data, self._data)
+            self.availability_flag = AVAILABLE_ON_BOTH
+
+    def ensure_availability_on_host(self):
+        if self.can_be_represented_as_petscvec():
+            self._vec.getArray(readonly=True)  # performs a device->host transfer if needed
+        else:
+            if not self.is_available_on_host():
+                cl.enqueue_copy(opencl_backend.queue, self._data, self._opencl)
+            self.availability_flag = AVAILABLE_ON_BOTH
+
+    @property
+    def _kernel_args_(self):
+        if opencl_backend.offloading:
+            import pudb; pu.db
+        if self.can_be_represented_as_petscvec():
+            with self.vec as v:
+                if opencl_backend.offloading:
+                    return (cl.MemoryObject.from_int_ptr(v.getCLMemHandle('rw'), False), )
+                else:
+                    return (self._data.ctypes.data, )
+        else:
+            if opencl_backend.offloading:
+                if not self.is_available_on_device():
+                    if configuration['only_explicit_host_device_data_transfers']:
+                        raise RuntimeError("Dat unavailable on device. Call"
+                                           " ensure_availability_on_device()")
+
+                    self.ensure_availability_on_device()
+
+                self.availability_flag = AVAILABLE_ON_DEVICE_ONLY
+                return (self._opencl_data, )
+            else:
+                if not self.is_available_on_host():
+                    if configuration['only_explicit_host_device_data_transfers']:
+                        raise RuntimeError("Dat unavailable on host. Call"
+                                           " ensure_availability_on_device()")
+
+                    self.ensure_availability_on_host()
+
+                self.availability_flag = AVAILABLE_ON_HOST_ONLY
+                return (self._data.ctypes.data, )
+
+    @collective
+    @property
+    def data(self):
+        if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
+            raise RuntimeError("Illegal access: no data associated with this Dat!")
+        self.halo_valid = False
+
+        if not self.is_available_on_host():
+            if configuration['only_explicit_host_device_data_transfers']:
+                raise RuntimeError("Dat unavailable on host. Call"
+                                   " ensure_availability_on_device()")
+            self.ensure_availability_on_host()
+
+        v = self._data[:self.dataset.size].view()
+        v.setflags(write=True)
+
+        # {{{ marking data on the device as invalid
+
+        if self.can_be_represented_as_petsvec():
+            pass
+            # self._vec.getArray()
+        else:
+            self.availability_flag = AVAILABLE_ON_HOST_ONLY
+
+        # }}}
+
+        return v
 
 
 class Global(petsc_base.Global):
-    @cached_property
+    """
+    Global for OpenCL.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(Global, self).__init__(*args, **kwargs)
+        self._opencl_data = None
+
+    def get_availability(self):
+        if self._opencl_data is None:
+            return base.AVAILABLE_ON_HOST_ONLY
+
+        return base.AVAILABLE_ON_BOTH
+
+    def ensure_availability_on_device(self):
+        if self._opencl_data is None:
+            self._opencl_data = cl_buffer_from_numpy_array(self._data, 'r')
+
+    def ensure_availability_on_host(self):
+        # Global once initialized is not over-written so always available
+        # on host.
+        pass
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
+
+    @property
     def _kernel_args_(self):
-        device_data = cl_buffer_from_numpy_array(self._data, 'r')
-        return (device_data, )
+        if opencl_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Global unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+
+            return (self._opencl_data,)
+        else:
+            return super(Global, self)._kernel_args_
 
 
 class JITModule(base.JITModule):
@@ -269,7 +485,15 @@ class JITModule(base.JITModule):
             self._initialized = True
             return self.__call__(*args)
 
-        return self._fun(opencl_backend.queue, grid, block, *(args+extra_global_args), g_times_l=True)
+        Au_before = np.empty(121)
+        coords_before = np.empty((121, 2))
+        u_before = np.empty(121)
+        cl.enqueue_copy(opencl_backend.queue, Au_before, args[2])
+        cl.enqueue_copy(opencl_backend.queue, coords_before, args[3])
+        cl.enqueue_copy(opencl_backend.queue, u_before, args[4])
+        import pudb; pu.db
+
+        self._fun(opencl_backend.queue, grid, block, *(args+extra_global_args), g_times_l=True)
 
     @cached_property
     def _wrapper_name(self):
@@ -424,6 +648,7 @@ class ParLoop(petsc_base.ParLoop):
             # Finalise global increments
             for tmp, glob in self._reduced_globals.items():
                 # copy results to the host
+                raise NotImplementedError()
                 cuda.memcpy_dtoh(tmp._data, tmp.device_handle)
                 glob._data += tmp._data
 
@@ -439,26 +664,14 @@ class ParLoop(petsc_base.ParLoop):
         if part.size == 0:
             return
 
-        # how about over here we decide what should the strategy be..
-
-        if configuration["gpu_timer"]:
-            start = cuda.Event()
-            end = cuda.Event()
-            start.record()
-            start.synchronize()
-            fun(part.offset, part.offset + part.size, *arglist)
-            end.record()
-            end.synchronize()
-            ExecTimeNoter.note(start.time_till(end)/1000)
-            # print("{0}_TIME= {1}".format(self._jitmodule._wrapper_name, start.time_till(end)/1000))
-            return
-
         with timed_region("ParLoop_{0}_{1}".format(self.iterset.name, self._jitmodule._wrapper_name)):
             fun(part.offset, part.offset + part.size, *arglist)
 
 
 class OpenCLBackend(AbstractPETScBackend):
-    ParLoop = ParLoop
+    ParLoop_offloading = ParLoop
+    ParLoop_no_offloading = sequential.ParLoop
+    ParLoop = sequential.ParLoop
     Set = base.Set
     ExtrudedSet = ExtrudedSet
     MixedSet = base.MixedSet
@@ -473,29 +686,36 @@ class OpenCLBackend(AbstractPETScBackend):
     Mat = petsc_base.Mat
     Global = Global
     GlobalDataSet = petsc_base.GlobalDataSet
+    PETScVecType = 'viennacl'
+
+    def __init__(self):
+        self.offloading = False
 
     @cached_property
     def context(self):
+        # create a dummy vector and extract its underlying context
         x = PETSc.Vec().create(PETSc.COMM_WORLD)
         x.setType('viennacl')
-        x.setSizes(size=10)
+        x.setSizes(size=1)
         ctx_ptr = x.getCLContextHandle()
         return cl.Context.from_int_ptr(ctx_ptr, retain=False)
 
     @cached_property
     def queue(self):
+        # create a dummy vector and extract its associated command queue
         x = PETSc.Vec().create(PETSc.COMM_WORLD)
         x.setType('viennacl')
-        x.setSizes(size=10)
+        x.setSizes(size=1)
         queue_ptr = x.getCLQueueHandle()
         return cl.CommandQueue.from_int_ptr(queue_ptr, retain=False)
 
-    def PETScVecType(self, comm):
-        if comm.size == 1:
-            return 'seqviennacl'
-        else:
-            # TODO:
-            raise NotImplementedError("mpiviennacl is not yet exposed.")
+    def turn_on_offloading(self):
+        self.offloading = True
+        self.ParLoop = self.ParLoop_offloading
+
+    def turn_off_offloading(self):
+        self.offloading = False
+        self.ParLoop = self.ParLoop_no_offloading
 
 
 opencl_backend = OpenCLBackend()
