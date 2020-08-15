@@ -44,12 +44,12 @@ from pyop2.base import READ, WRITE, RW, INC, MIN, MAX  # noqa: F401
 from pyop2.base import Kernel, Sparsity, Halo  # noqa: F401
 # TODO: These imports shouldn't be imported from sequential
 # i.e. all uses of op2.xyz should be replaces with op2.compute_backend.xyz
-from pyop2.sequential import par_loop  # noqa: F401
-from pyop2.sequential import Set, ExtrudedSet, MixedSet, Subset, DataSet, MixedDataSet  # noqa: F401
-from pyop2.sequential import Map, MixedMap  # noqa: F401
-from pyop2.sequential import Dat, MixedDat, DatView, Mat  # noqa: F401
-from pyop2.sequential import Global, GlobalDataSet        # noqa: F401
-from pyop2.sequential import ParLoop as SeqParLoop  # noqa: F401
+from pyop2.base import par_loop  # noqa: F401
+from pyop2.base import Set, ExtrudedSet, MixedSet, Subset, DataSet, MixedDataSet  # noqa: F401
+from pyop2.base import Map, MixedMap  # noqa: F401
+from pyop2.base import Dat, MixedDat, DatView, Mat  # noqa: F401
+from pyop2.base import Global, GlobalDataSet        # noqa: F401
+from pyop2.base import ParLoop as SeqParLoop  # noqa: F401
 from pyop2.sequential import cpu_backend
 
 from pyop2.pyparloop import ParLoop as PyParLoop

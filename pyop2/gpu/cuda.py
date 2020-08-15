@@ -127,12 +127,8 @@ class Dat(petsc_base.Dat):
         # But use getSizes to save an Allreduce in computing the
         # global size.
         size = self.dataset.layout_vec.getSizes()
-        cuda_vec = PETSc.Vec().create(self.comm)
-        cuda_vec.setSizes(size=size, bsize=self.cdim)
-        cuda_vec.setType('cuda')
-        cuda_vec.setArray(self._data[:size[0]])
-
-        return cuda_vec
+        data = self._data[:size[0]]
+        return PETSc.Vec().createCUDAWithArrays(data, size=size, bsize=self.cdim, comm=self.comm)
 
 
 class Global(petsc_base.Global):

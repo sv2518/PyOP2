@@ -57,9 +57,25 @@ from pyop2.exceptions import *  # noqa: F401
 from pyop2.mpi import collective
 from pyop2.profiling import timed_region
 from pyop2.utils import cached_property, get_petsc_dir
+from petsc4py import PETSc
 from pyop2.petsc_base import AbstractPETScBackend
 
 import loopy
+
+
+class Dat(Dat):
+    @cached_property
+    def _vec(self):
+        assert self.dtype == PETSc.ScalarType, \
+            "Can't create Vec with type %s, must be %s" % (self.dtype, PETSc.ScalarType)
+        # Can't duplicate layout_vec of dataset, because we then
+        # carry around extra unnecessary data.
+        # But use getSizes to save an Allreduce in computing the
+        # global size.
+        size = self.dataset.layout_vec.getSizes()
+        data = self._data[:size[0]]
+        vec = PETSc.Vec().createWithArray(data, size=size, bsize=self.cdim, comm=self.comm)
+        return vec
 
 
 class JITModule(base.JITModule):

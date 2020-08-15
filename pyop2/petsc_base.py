@@ -342,25 +342,12 @@ class VecAccessMixin(metaclass=abc.ABCMeta):
 
 
 class Dat(base.Dat, VecAccessMixin):
+    @property
+    def _vec(self):
+        raise NotImplementedError("subclass of petsc_base.Dat must define _vec.")
+
     def can_be_represented_as_petscvec(self):
         return ((self.dtype == PETSc.ScalarType) and self.cdim > 0)
-
-    @utils.cached_property
-    def _vec(self):
-        assert self.dtype == PETSc.ScalarType, \
-            "Can't create Vec with type %s, must be %s" % (self.dtype, PETSc.ScalarType)
-        # Can't duplicate layout_vec of dataset, because we then
-        # carry around extra unnecessary data.
-        # But use getSizes to save an Allreduce in computing the
-        # global size.
-        from pyop2.op2 import compute_backend
-        size = self.dataset.layout_vec.getSizes()
-        vec = PETSc.Vec().create(self.comm)
-        vec.setSizes(size=size, bsize=self.cdim)
-        vec.setType(compute_backend.PETScVecType)
-        vec.setArray(self._data[:size[0]])
-
-        return vec
 
     @contextmanager
     def vec_context(self, access):
@@ -375,12 +362,6 @@ class Dat(base.Dat, VecAccessMixin):
         yield self._vec
         if access is not base.READ:
             self.halo_valid = False
-
-    def is_available_on_device(self):
-        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
-
-    def is_available_on_host(self):
-        return bool(self.get_availability() & base.AVAILABLE_ON_HOST_ONLY)
 
 
 class MixedDat(base.MixedDat, VecAccessMixin):

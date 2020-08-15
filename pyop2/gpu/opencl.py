@@ -205,9 +205,55 @@ class Dat(petsc_base.Dat):
     """
     def __init__(self, *args, **kwargs):
         super(Dat, self).__init__(*args, **kwargs)
-        # opencl_data, offload_mask: used only when cannot be represented as petscvec
-        self._opencl_data = cl_buffer_from_numpy_array(self._data, 'rw')
+        # availability_flag: only used when Dat cannot be represented as a
+        # petscvec; when Dat can be represented as a petscvec the availability
+        # flag is directly read from the petsc vec.
+        self.availability_flag = base.AVAILABLE_ON_HOST_ONLY
+
+    @cached_property
+    def _cl_buffer(self):
+        """
+        Only used when the Dat's data cannot be represented as a petsc Vec.
+        """
         self.availability_flag = base.AVAILABLE_ON_BOTH
+        return cl_buffer_from_numpy_array(self._data, 'rw')
+
+    @cached_property
+    def _vec(self):
+        assert self.dtype == PETSc.ScalarType, \
+            "Can't create Vec with type %s, must be %s" % (self.dtype, PETSc.ScalarType)
+        # Can't duplicate layout_vec of dataset, because we then
+        # carry around extra unnecessary data.
+        # But use getSizes to save an Allreduce in computing the
+        # global size.
+        size = self.dataset.layout_vec.getSizes()
+        data = self._data[:size[0]]
+        return PETSc.Vec().createViennaCLWithArrays(data, size=size, bsize=self.cdim, comm=self.comm)
+
+    def get_availability(self):
+        if self.can_be_represented_as_petscvec():
+            return base.DataAvailability(self._vec.getOffloadMask())
+        else:
+            return self.availability_flag
+
+    def ensure_availability_on_device(self):
+        if self.can_be_represented_as_petscvec():
+            if not opencl_backend.offloading:
+                raise NotImplementedError("petsc limitation. Can only ")
+
+            self._vec.getCLMemHandle('r')  # performs a host->device transfer if needed
+        else:
+            if not self.is_available_on_host():
+                cl.enqueue_copy(opencl_backend.queue, self._opencl_data, self._data)
+            self.availability_flag = AVAILABLE_ON_BOTH
+
+    def ensure_availability_on_host(self):
+        if self.can_be_represented_as_petscvec():
+            self._vec.getArray(readonly=True)  # performs a device->host transfer if needed
+        else:
+            if not self.is_available_on_host():
+                cl.enqueue_copy(opencl_backend.queue, self._data, self._opencl_data)
+            self.availability_flag = AVAILABLE_ON_BOTH
 
     @contextmanager
     def vec_context(self, access):
@@ -221,13 +267,13 @@ class Dat(petsc_base.Dat):
         self._vec.stateIncrease()
 
         if opencl_backend.offloading:
-            self._vec.bindToCPU(False)
             if not self.is_available_on_device():
                 if configuration['only_explicit_host_device_data_transfers']:
                     raise RuntimeError("Dat unavailable on device. Call"
                                        " ensure_availability_on_device()")
 
                 self.ensure_availability_on_device()
+            self._vec.bindToCPU(False)
         else:
             if not self.is_available_on_host():
                 if configuration['only_explicit_host_device_data_transfers']:
@@ -241,41 +287,19 @@ class Dat(petsc_base.Dat):
 
         if access is not base.READ:
             self.halo_valid = False
-            self._vec.restoreCLMemHandle()  # let petsc know that GPU data has been altered
-
-    def get_availability(self):
-        # FIXME: THis needs to be fixed
-        return base.AVAILABLE_ON_HOST_ONLY
-        if self.can_be_represented_as_petscvec():
-            with self.vec_ro as v:
-                return DataAvailability(v.getOffloadMask())
-        else:
-            return self.availability_flag
-
-    def ensure_availability_on_device(self):
-        if self.can_be_represented_as_petscvec():
-            self._vec.getCLMemHandle('r')  # performs a host->device transfer if needed
-        else:
-            if not self.is_available_on_host():
-                cl.enqueue_copy(opencl_backend.queue, self._opencl_data, self._data)
-            self.availability_flag = AVAILABLE_ON_BOTH
-
-    def ensure_availability_on_host(self):
-        if self.can_be_represented_as_petscvec():
-            self._vec.getArray(readonly=True)  # performs a device->host transfer if needed
-        else:
-            if not self.is_available_on_host():
-                cl.enqueue_copy(opencl_backend.queue, self._data, self._opencl)
-            self.availability_flag = AVAILABLE_ON_BOTH
 
     @property
     def _kernel_args_(self):
-        if opencl_backend.offloading:
-            import pudb; pu.db
+        # if self.name == 'function_6':
+        #     import pudb
+        #     pudb.set_trace()
         if self.can_be_represented_as_petscvec():
             with self.vec as v:
                 if opencl_backend.offloading:
-                    return (cl.MemoryObject.from_int_ptr(v.getCLMemHandle('rw'), False), )
+                    clmem_intptr = v.getCLMemHandle('rw')
+                    v.restoreCLMemHandle()  # convey to petsc that we have updated the data in the CL buffer
+
+                    return (cl.MemoryObject.from_int_ptr(clmem_intptr, False), )
                 else:
                     return (self._data.ctypes.data, )
         else:
@@ -305,6 +329,10 @@ class Dat(petsc_base.Dat):
     def data(self):
         if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
             raise RuntimeError("Illegal access: no data associated with this Dat!")
+
+        if opencl_backend.offloading:
+            raise RuntimeError("Illegal access: Dat.data should not be accessed during offloading.")
+
         self.halo_valid = False
 
         if not self.is_available_on_host():
@@ -319,8 +347,7 @@ class Dat(petsc_base.Dat):
         # {{{ marking data on the device as invalid
 
         if self.can_be_represented_as_petsvec():
-            pass
-            # self._vec.getArray()
+            self._vec.setArray(self._vec.getArray())  # let petsc know that we are altering data on the CPU
         else:
             self.availability_flag = AVAILABLE_ON_HOST_ONLY
 
@@ -484,14 +511,6 @@ class JITModule(base.JITModule):
             self.compile()
             self._initialized = True
             return self.__call__(*args)
-
-        Au_before = np.empty(121)
-        coords_before = np.empty((121, 2))
-        u_before = np.empty(121)
-        cl.enqueue_copy(opencl_backend.queue, Au_before, args[2])
-        cl.enqueue_copy(opencl_backend.queue, coords_before, args[3])
-        cl.enqueue_copy(opencl_backend.queue, u_before, args[4])
-        import pudb; pu.db
 
         self._fun(opencl_backend.queue, grid, block, *(args+extra_global_args), g_times_l=True)
 

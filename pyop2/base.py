@@ -1903,6 +1903,21 @@ class Dat(DataCarrier, _EmptyDataMixin):
         halo.local_to_global_end(self, insert_mode)
         self.halo_valid = False
 
+    def get_availability(self):
+        raise NotImplementedError("Subclasses must implement this.")
+
+    def ensure_availability_on_device(self):
+        raise NotImplementedError("Subclasses must implement this.")
+
+    def ensure_availability_on_host(self):
+        raise NotImplementedError("Subclasses must implement this.")
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & AVAILABLE_ON_DEVICE_ONLY)
+
+    def is_available_on_host(self):
+        return bool(self.get_availability() & AVAILABLE_ON_HOST_ONLY)
+
 
 class DatView(Dat):
     """An indexed view into a :class:`Dat`.
