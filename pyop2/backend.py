@@ -29,3 +29,9 @@ class AbstractComputeBackend:
             raise NotImplementedError("'{}' is not implemented for backend"
                                       " '{}'.".format(val, self.__name__))
         return val
+
+    def turn_on_offloading(self):
+        raise NotImplementedError()
+
+    def turn_off_offloading(self):
+        raise NotImplementedError()
