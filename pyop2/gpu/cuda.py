@@ -38,11 +38,13 @@ import ctypes
 from copy import deepcopy as dcopy
 
 from hashlib import md5
+from contextlib import contextmanager
 
 from pyop2.datatypes import IntType, as_ctypes
 from pyop2 import base
 from pyop2 import compilation
 from pyop2 import petsc_base
+from pyop2 import sequential
 from pyop2.exceptions import *  # noqa: F401
 from pyop2.mpi import collective
 from pyop2.profiling import timed_region
@@ -56,68 +58,147 @@ from pyop2.petsc_base import PETSc, AbstractPETScBackend
 from pyop2.logger import ExecTimeNoter
 
 
-class Map(base.Map):
-    """Map for CUDA"""
+def cudamem_from_numpy_array(ary):
+    ary_on_gpu = cuda.mem_alloc(int(ary.nbytes))
+    cuda.memcpy_htod(ary_on_gpu, ary)
+    return ary_on_gpu
 
-    def __init__(self, base_map):
-        assert type(base_map) == base.Map
-        self._iterset = base_map._iterset
-        self._toset = base_map._toset
-        self.comm = base_map.comm
-        self._arity = base_map._arity
-        # maps indexed as `map[icell, idof]`
-        self._values = base_map._values
-        self._values_cuda = cuda.mem_alloc(int(self._values.nbytes))
-        cuda.memcpy_htod(self._values_cuda, self._values)
-        self.shape = base_map.shape
-        self._name = 'cuda_copy_of_%s' % (base_map._name)
-        self._offset = base_map._offset
-        # A cache for objects built on top of this map
-        self._cache = {}
+
+class Map(base.Map):
+
+    def __init__(self, *args, **kwargs):
+        super(Map, self).__init__(*args, **kwargs)
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
 
     @cached_property
+    def _cuda_values(self):
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cudamem_from_numpy_array(self._values)
+
+    def get_availability(self):
+        return self._availability_flag
+
+    def ensure_availability_on_device(self):
+        self._cuda_values
+
+    def ensure_availability_on_host(self):
+        # Map once initialized is not over-written so always available
+        # on host.
+        pass
+
+    @property
     def _kernel_args_(self):
-        return (self._values_cuda, )
+        if cuda_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Map unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+
+            return (self._cuda_values,)
+        else:
+            return super(Map, self)._kernel_args_
 
 
 class ExtrudedSet(base.ExtrudedSet):
     """
     ExtrudedSet for CUDA.
     """
+
+    def __init__(self, *args, **kwargs):
+        super(ExtrudedSet, self).__init__(*args, **kwargs)
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
+
     @cached_property
+    def cuda_layers_array(self):
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cudamem_from_numpy_array(self.layers_array)
+
+    def get_availability(self):
+        return self._availability_flag
+
+    def ensure_availability_on_device(self):
+        self.cuda_layers_array
+
+    def ensure_availability_on_host(self):
+        # ExtrudedSet once initialized is not over-written so always available
+        # on host.
+        pass
+
+    @property
     def _kernel_args_(self):
-        m_gpu = cuda.mem_alloc(int(self.layers_array.nbytes))
-        cuda.memcpy_htod(m_gpu, self.layers_array)
-        return (m_gpu,)
+        if cuda_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("ExtrudedSet unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+
+            return (self.cuda_layers_array,)
+        else:
+            return super(ExtrudedSet, self)._kernel_args_
 
 
 class Subset(base.Subset):
     """
     Subset for CUDA.
     """
+    def __init__(self, *args, **kwargs):
+        super(Subset, self).__init__(*args, **kwargs)
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
+
+    def get_availability(self):
+        return self._availability_flag
+
     @cached_property
+    def _cuda_indices(self):
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cudamem_from_numpy_array(self._indices)
+
+    def ensure_availability_on_device(self):
+        self._cuda_indices
+
+    def ensure_availability_on_host(self):
+        # Subset once initialized is not over-written so always available
+        # on host.
+        pass
+
+    @property
     def _kernel_args_(self):
-        m_gpu = cuda.mem_alloc(int(self._indices.nbytes))
-        cuda.memcpy_htod(m_gpu, self._indices)
-        return self._superset._kernel_args_ + (m_gpu, )
+        if cuda_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Subset unavailable on device. Call"
+                                       " ensure_availability_on_device()")
 
+                self.ensure_availability_on_device()
 
-class DataSet(petsc_base.DataSet):
-    @cached_property
-    def _layout_vec(self):
-        """A PETSc Vec compatible with the dof layout of this DataSet."""
-        size = (self.size * self.cdim, None)
-        vec = PETSc.Vec().create(comm=self.comm)
-        vec.setSizes(size, bsize=self.cdim)
-        vec.setType('cuda')
-        vec.setUp()
-        return vec
+            return (self._cuda_indices,)
+        else:
+            return super(Subset, self)._kernel_args_
 
 
 class Dat(petsc_base.Dat):
     """
     Dat for CUDA.
     """
+    def __init__(self, *args, **kwargs):
+        super(Dat, self).__init__(*args, **kwargs)
+        # _availability_flag: only used when Dat cannot be represented as a
+        # petscvec; when Dat can be represented as a petscvec the availability
+        # flag is directly read from the petsc vec.
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
+
+    @cached_property
+    def _cuda_data(self):
+        """
+        Only used when the Dat's data cannot be represented as a petsc Vec.
+        """
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cudamem_from_numpy_array(self._data)
+
     @cached_property
     def _vec(self):
         assert self.dtype == PETSc.ScalarType, \
@@ -130,18 +211,242 @@ class Dat(petsc_base.Dat):
         data = self._data[:size[0]]
         return PETSc.Vec().createCUDAWithArrays(data, size=size, bsize=self.cdim, comm=self.comm)
 
+    def get_availability(self):
+        if self.can_be_represented_as_petscvec():
+            return base.DataAvailability(self._vec.getOffloadMask())
+        else:
+            return self._availability_flag
+
+    def ensure_availability_on_device(self):
+        if self.can_be_represented_as_petscvec():
+            if not cuda_backend.offloading:
+                raise NotImplementedError("PETSc limitation: can ensure availaibility"
+                                          " on GPU only within an offloading context.")
+
+            self._vec.getCUDAHandle('r')  # performs a host->device transfer if needed
+        else:
+            if not self.is_available_on_device():
+                cuda.memcpy_htod(self._cuda_data, self._data)
+            self._availability_flag = AVAILABLE_ON_BOTH
+
+    def ensure_availability_on_host(self):
+        if self.can_be_represented_as_petscvec():
+            self._vec.getArray(readonly=True)  # performs a device->host transfer if needed
+        else:
+            if not self.is_available_on_host():
+                cuda.memcpy_dtoh(self._data, self._cuda_data)
+            self._availability_flag = AVAILABLE_ON_BOTH
+
+    @contextmanager
+    def vec_context(self, access):
+        r"""A context manager for a :class:`PETSc.Vec` from a :class:`Dat`.
+
+        :param access: Access descriptor: READ, WRITE, or RW."""
+        # PETSc Vecs have a state counter and cache norm computations
+        # to return immediately if the state counter is unchanged.
+        # Since we've updated the data behind their back, we need to
+        # change that state counter.
+        self._vec.stateIncrease()
+
+        if cuda_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Dat unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+            self._vec.bindToCPU(False)
+        else:
+            if not self.is_available_on_host():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Dat unavailable on host. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_host()
+            self._vec.bindToCPU(True)
+
+        yield self._vec
+
+        if access is not base.READ:
+            self.halo_valid = False
+
+    @property
+    def _kernel_args_(self):
+        if self.can_be_represented_as_petscvec():
+            with self.vec as v:
+                if cuda_backend.offloading:
+                    v.restoreCUDAHandle(v.getCUDAHandle())  # convey to petsc that we have updated the data in the CL buffer
+                    return (v.getCUDAHandle(),)
+                else:
+                    return (self._data.ctypes.data, )
+        else:
+            if cuda_backend.offloading:
+                if not self.is_available_on_device():
+                    if configuration['only_explicit_host_device_data_transfers']:
+                        raise RuntimeError("Dat unavailable on device. Call"
+                                           " ensure_availability_on_device()")
+
+                    self.ensure_availability_on_device()
+
+                self._availability_flag = AVAILABLE_ON_DEVICE_ONLY
+                return (self._cuda_data, )
+            else:
+                if not self.is_available_on_host():
+                    if configuration['only_explicit_host_device_data_transfers']:
+                        raise RuntimeError("Dat unavailable on host. Call"
+                                           " ensure_availability_on_device()")
+
+                    self.ensure_availability_on_host()
+
+                self._availability_flag = AVAILABLE_ON_HOST_ONLY
+                return (self._data.ctypes.data, )
+
+    @collective
+    @property
+    def data(self):
+        if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
+            raise RuntimeError("Illegal access: no data associated with this Dat!")
+
+        self.halo_valid = False
+
+        # {{{ ensure availability on host
+
+        if not self.is_available_on_host():
+            if configuration['only_explicit_host_device_data_transfers']:
+                raise RuntimeError("Dat unavailable on host. Call"
+                                   " ensure_availability_on_device()")
+            self.ensure_availability_on_host()
+
+        # }}}
+
+        v = self._data[:self.dataset.size].view()
+        v.setflags(write=True)
+
+        # {{{ marking data on the device as invalid
+
+        if self.can_be_represented_as_petscvec():
+            self._vec.array_w  # let petsc know that we are altering data on the CPU
+        else:
+            self._availability_flag = AVAILABLE_ON_HOST_ONLY
+
+        # }}}
+
+        return v
+
+    @property
+    @collective
+    def data_with_halos(self):
+        self.global_to_local_begin(RW)
+        self.global_to_local_end(RW)
+        self.halo_valid = False
+
+        # {{{ ensure availability on host
+
+        if not self.is_available_on_host():
+            if configuration['only_explicit_host_device_data_transfers']:
+                raise RuntimeError("Dat unavailable on host. Call"
+                                   " ensure_availability_on_device()")
+            self.ensure_availability_on_host()
+
+        # }}}
+
+        v = self._data.view()
+        v.setflags(write=True)
+
+        # {{{ marking data on the device as invalid
+
+        if self.can_be_represented_as_petsvec():
+            self._vec.array_w  # let petsc know that we are altering data on the CPU
+        else:
+            self._availability_flag = AVAILABLE_ON_HOST_ONLY
+
+        # }}}
+
+        return v
+
+    @property
+    @collective
+    def data_ro(self):
+        if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
+            raise RuntimeError("Illegal access: no data associated with this Dat!")
+
+        # {{{ ensure availability on host
+
+        if not self.is_available_on_host():
+            if configuration['only_explicit_host_device_data_transfers']:
+                raise RuntimeError("Dat unavailable on host. Call"
+                                   " ensure_availability_on_device()")
+            self.ensure_availability_on_host()
+
+        # }}}
+
+        v = self._data[:self.dataset.size].view()
+        v.setflags(write=False)
+        return v
+
+    @property
+    @collective
+    def data_ro_with_halos(self):
+        self.global_to_local_begin(READ)
+        self.global_to_local_end(READ)
+        v = self._data.view()
+
+        # {{{ ensure availability on host
+
+        if not self.is_available_on_host():
+            if configuration['only_explicit_host_device_data_transfers']:
+                raise RuntimeError("Dat unavailable on host. Call"
+                                   " ensure_availability_on_device()")
+            self.ensure_availability_on_host()
+
+        # }}}
+
+        v.setflags(write=False)
+        return v
+
 
 class Global(petsc_base.Global):
+    """
+    Global for CUDA.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(Global, self).__init__(*args, **kwargs)
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
 
     @cached_property
-    def device_handle(self):
-        dev_data = cuda.mem_alloc(self._data.nbytes)
-        cuda.memcpy_htod(dev_data, self._data)
-        return dev_data
+    def _cuda_data(self):
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cudamem_from_numpy_array(self._data)
 
-    @cached_property
+    def get_availability(self):
+        return self._availability_flag
+
+    def ensure_availability_on_device(self):
+        if not self.is_available_on_device():
+            cuda.memcpy_htod(self._cuda_data, self._data)
+            self._availability_flag = base.AVAILABLE_ON_BOTH
+
+    def ensure_availability_on_host(self):
+        if not self.is_available_on_host():
+            cuda.memcpy_dtoh(self._data, self._cuda_data)
+            self._availability_flag = base.AVAILABLE_ON_BOTH
+
+    @property
     def _kernel_args_(self):
-        return (self.device_handle, )
+        if cuda_backend.offloading:
+            if not self.is_available_on_device():
+                if configuration['only_explicit_host_device_data_transfers']:
+                    raise RuntimeError("Global unavailable on device. Call"
+                                       " ensure_availability_on_device()")
+
+                self.ensure_availability_on_device()
+
+            self._availability_flag = base.AVAILABLE_ON_DEVICE_ONLY
+            return (self._cuda_data,)
+        else:
+            self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
+            return super(Global, self)._kernel_args_
 
 
 class JITModule(base.JITModule):
@@ -389,10 +694,6 @@ class ParLoop(petsc_base.ParLoop):
 
     printed = set()
 
-    def __init__(self, *args, **kwargs):
-        super(ParLoop, self).__init__(*args, **kwargs)
-        self.kernel.cpp = True
-
     def prepare_arglist(self, iterset, *args):
         nbytes = 0
 
@@ -429,8 +730,10 @@ class ParLoop(petsc_base.ParLoop):
             # Finalise global increments
             for tmp, glob in self._reduced_globals.items():
                 # copy results to the host
-                cuda.memcpy_dtoh(tmp._data, tmp.device_handle)
+                tmp.ensure_availability_on_host()
+                glob.ensure_availability_on_host()
                 glob._data += tmp._data
+                glob._availability_flag = base.AVAILABLE_ON_HOST_ONLY
 
     @cached_property
     def _jitmodule(self):
@@ -463,12 +766,14 @@ class ParLoop(petsc_base.ParLoop):
 
 
 class CUDABackend(AbstractPETScBackend):
-    ParLoop = ParLoop
+    ParLoop_offloading = ParLoop
+    ParLoop_no_offloading = sequential.ParLoop
+    ParLoop = sequential.ParLoop
     Set = base.Set
     ExtrudedSet = ExtrudedSet
     MixedSet = base.MixedSet
     Subset = Subset
-    DataSet = DataSet
+    DataSet = petsc_base.DataSet
     MixedDataSet = petsc_base.MixedDataSet
     Map = Map
     MixedMap = base.MixedMap
@@ -478,13 +783,18 @@ class CUDABackend(AbstractPETScBackend):
     Mat = petsc_base.Mat
     Global = Global
     GlobalDataSet = petsc_base.GlobalDataSet
+    PETScVecType = 'cuda'
 
-    def PETScVecType(self, comm):
-        if comm.size == 1:
-            return 'seqcuda'
-        else:
-            # TODO:
-            raise NotImplementedError("mpicuda is not yet exposed.")
+    def __init__(self):
+        self.offloading = False
+
+    def turn_on_offloading(self):
+        self.offloading = True
+        self.ParLoop = self.ParLoop_offloading
+
+    def turn_off_offloading(self):
+        self.offloading = False
+        self.ParLoop = self.ParLoop_no_offloading
 
 
 cuda_backend = CUDABackend()

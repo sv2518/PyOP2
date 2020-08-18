@@ -155,7 +155,6 @@ class Subset(base.Subset):
     def __init__(self, *args, **kwargs):
         super(Subset, self).__init__(*args, **kwargs)
         self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
-        self._opencl_indices = None
 
     def get_availability(self):
         return self._availability_flag
@@ -228,11 +227,12 @@ class Dat(petsc_base.Dat):
     def ensure_availability_on_device(self):
         if self.can_be_represented_as_petscvec():
             if not opencl_backend.offloading:
-                raise NotImplementedError("petsc limitation. Can only ")
+                raise NotImplementedError("PETSc limitation: can ensure availaibility"
+                                          " on the device only within an offloading context.")
 
             self._vec.getCLMemHandle('r')  # performs a host->device transfer if needed
         else:
-            if not self.is_available_on_host():
+            if not self.is_available_on_device():
                 cl.enqueue_copy(opencl_backend.queue, self._cl_data, self._data)
             self._availability_flag = AVAILABLE_ON_BOTH
 
