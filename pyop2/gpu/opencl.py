@@ -75,25 +75,23 @@ class Map(base.Map):
 
     def __init__(self, *args, **kwargs):
         super(Map, self).__init__(*args, **kwargs)
-        self._opencl_values = None
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
+
+    @cached_property
+    def _cl_values(self):
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cl_buffer_from_numpy_array(self._values, 'r')
 
     def get_availability(self):
-        if self._opencl_values is None:
-            return base.AVAILABLE_ON_HOST_ONLY
-
-        return base.AVAILABLE_ON_BOTH
+        return self._availability_flag
 
     def ensure_availability_on_device(self):
-        if self._opencl_values is None:
-            self._opencl_values = cl_buffer_from_numpy_array(self._values, 'r')
+        self._cl_values
 
     def ensure_availability_on_host(self):
         # Map once initialized is not over-written so always available
         # on host.
         pass
-
-    def is_available_on_device(self):
-        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
 
     @property
     def _kernel_args_(self):
@@ -105,7 +103,7 @@ class Map(base.Map):
 
                 self.ensure_availability_on_device()
 
-            return (self._opencl_values,)
+            return (self._cl_values,)
         else:
             return super(Map, self)._kernel_args_
 
@@ -117,25 +115,23 @@ class ExtrudedSet(base.ExtrudedSet):
 
     def __init__(self, *args, **kwargs):
         super(ExtrudedSet, self).__init__(*args, **kwargs)
-        self.opencl_layers_array = None
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
+
+    @cached_property
+    def cl_layers_array(self):
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cl_buffer_from_numpy_array(self.layers_array, 'r')
 
     def get_availability(self):
-        if self.opencl_layers_array is None:
-            return base.AVAILABLE_ON_HOST_ONLY
-
-        return base.AVAILABLE_ON_BOTH
+        return self._availability_flag
 
     def ensure_availability_on_device(self):
-        if self.opencl_layers_array is None:
-            self.opencl_layers_array = cl_buffer_from_numpy_array(self.layers_array, 'r')
+        self.cl_layers_array
 
     def ensure_availability_on_host(self):
         # ExtrudedSet once initialized is not over-written so always available
         # on host.
         pass
-
-    def is_available_on_device(self):
-        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
 
     @property
     def _kernel_args_(self):
@@ -147,7 +143,7 @@ class ExtrudedSet(base.ExtrudedSet):
 
                 self.ensure_availability_on_device()
 
-            return (self.opencl_layers_array,)
+            return (self.cl_layers_array,)
         else:
             return super(ExtrudedSet, self)._kernel_args_
 
@@ -158,25 +154,24 @@ class Subset(base.Subset):
     """
     def __init__(self, *args, **kwargs):
         super(Subset, self).__init__(*args, **kwargs)
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
         self._opencl_indices = None
 
     def get_availability(self):
-        if self._opencl_indices is None:
-            return base.AVAILABLE_ON_HOST_ONLY
+        return self._availability_flag
 
-        return base.AVAILABLE_ON_BOTH
+    @cached_property
+    def _cl_indices(self):
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cl_buffer_from_numpy_array(self._indices, 'r')
 
     def ensure_availability_on_device(self):
-        if self._opencl_indices is None:
-            self._opencl_indices = cl_buffer_from_numpy_array(self._indices, 'r')
+        self._cl_indices
 
     def ensure_availability_on_host(self):
         # Subset once initialized is not over-written so always available
         # on host.
         pass
-
-    def is_available_on_device(self):
-        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
 
     @property
     def _kernel_args_(self):
@@ -188,15 +183,9 @@ class Subset(base.Subset):
 
                 self.ensure_availability_on_device()
 
-            return (self._opencl_indices,)
+            return (self._cl_indices,)
         else:
             return super(Subset, self)._kernel_args_
-
-
-class DataSet(petsc_base.DataSet):
-    """
-    At the moment I don't think there should be any over-riding needed.
-    """
 
 
 class Dat(petsc_base.Dat):
@@ -205,17 +194,17 @@ class Dat(petsc_base.Dat):
     """
     def __init__(self, *args, **kwargs):
         super(Dat, self).__init__(*args, **kwargs)
-        # availability_flag: only used when Dat cannot be represented as a
+        # _availability_flag: only used when Dat cannot be represented as a
         # petscvec; when Dat can be represented as a petscvec the availability
         # flag is directly read from the petsc vec.
-        self.availability_flag = base.AVAILABLE_ON_HOST_ONLY
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
 
     @cached_property
-    def _cl_buffer(self):
+    def _cl_data(self):
         """
         Only used when the Dat's data cannot be represented as a petsc Vec.
         """
-        self.availability_flag = base.AVAILABLE_ON_BOTH
+        self._availability_flag = base.AVAILABLE_ON_BOTH
         return cl_buffer_from_numpy_array(self._data, 'rw')
 
     @cached_property
@@ -234,7 +223,7 @@ class Dat(petsc_base.Dat):
         if self.can_be_represented_as_petscvec():
             return base.DataAvailability(self._vec.getOffloadMask())
         else:
-            return self.availability_flag
+            return self._availability_flag
 
     def ensure_availability_on_device(self):
         if self.can_be_represented_as_petscvec():
@@ -244,16 +233,16 @@ class Dat(petsc_base.Dat):
             self._vec.getCLMemHandle('r')  # performs a host->device transfer if needed
         else:
             if not self.is_available_on_host():
-                cl.enqueue_copy(opencl_backend.queue, self._opencl_data, self._data)
-            self.availability_flag = AVAILABLE_ON_BOTH
+                cl.enqueue_copy(opencl_backend.queue, self._cl_data, self._data)
+            self._availability_flag = AVAILABLE_ON_BOTH
 
     def ensure_availability_on_host(self):
         if self.can_be_represented_as_petscvec():
             self._vec.getArray(readonly=True)  # performs a device->host transfer if needed
         else:
             if not self.is_available_on_host():
-                cl.enqueue_copy(opencl_backend.queue, self._data, self._opencl_data)
-            self.availability_flag = AVAILABLE_ON_BOTH
+                cl.enqueue_copy(opencl_backend.queue, self._data, self._cl_data)
+            self._availability_flag = AVAILABLE_ON_BOTH
 
     @contextmanager
     def vec_context(self, access):
@@ -290,9 +279,6 @@ class Dat(petsc_base.Dat):
 
     @property
     def _kernel_args_(self):
-        # if self.name == 'function_6':
-        #     import pudb
-        #     pudb.set_trace()
         if self.can_be_represented_as_petscvec():
             with self.vec as v:
                 if opencl_backend.offloading:
@@ -311,7 +297,7 @@ class Dat(petsc_base.Dat):
 
                     self.ensure_availability_on_device()
 
-                self.availability_flag = AVAILABLE_ON_DEVICE_ONLY
+                self._availability_flag = AVAILABLE_ON_DEVICE_ONLY
                 return (self._opencl_data, )
             else:
                 if not self.is_available_on_host():
@@ -321,7 +307,7 @@ class Dat(petsc_base.Dat):
 
                     self.ensure_availability_on_host()
 
-                self.availability_flag = AVAILABLE_ON_HOST_ONLY
+                self._availability_flag = AVAILABLE_ON_HOST_ONLY
                 return (self._data.ctypes.data, )
 
     @collective
@@ -330,10 +316,9 @@ class Dat(petsc_base.Dat):
         if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
             raise RuntimeError("Illegal access: no data associated with this Dat!")
 
-        if opencl_backend.offloading:
-            raise RuntimeError("Illegal access: Dat.data should not be accessed during offloading.")
-
         self.halo_valid = False
+
+        # {{{ ensure availability on host
 
         if not self.is_available_on_host():
             if configuration['only_explicit_host_device_data_transfers']:
@@ -341,18 +326,90 @@ class Dat(petsc_base.Dat):
                                    " ensure_availability_on_device()")
             self.ensure_availability_on_host()
 
+        # }}}
+
         v = self._data[:self.dataset.size].view()
+        v.setflags(write=True)
+
+        # {{{ marking data on the device as invalid
+        if self.can_be_represented_as_petscvec():
+            self._vec.array_w  # let petsc know that we are altering data on the CPU
+        else:
+            self._availability_flag = AVAILABLE_ON_HOST_ONLY
+
+        # }}}
+
+        return v
+
+    @property
+    @collective
+    def data_with_halos(self):
+        self.global_to_local_begin(RW)
+        self.global_to_local_end(RW)
+        self.halo_valid = False
+
+        # {{{ ensure availability on host
+
+        if not self.is_available_on_host():
+            if configuration['only_explicit_host_device_data_transfers']:
+                raise RuntimeError("Dat unavailable on host. Call"
+                                   " ensure_availability_on_device()")
+            self.ensure_availability_on_host()
+
+        # }}}
+
+        v = self._data.view()
         v.setflags(write=True)
 
         # {{{ marking data on the device as invalid
 
         if self.can_be_represented_as_petsvec():
-            self._vec.setArray(self._vec.getArray())  # let petsc know that we are altering data on the CPU
+            self._vec.array_w  # let petsc know that we are altering data on the CPU
         else:
-            self.availability_flag = AVAILABLE_ON_HOST_ONLY
+            self._availability_flag = AVAILABLE_ON_HOST_ONLY
 
         # }}}
 
+        return v
+
+    @property
+    @collective
+    def data_ro(self):
+        if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
+            raise RuntimeError("Illegal access: no data associated with this Dat!")
+
+        # {{{ ensure availability on host
+
+        if not self.is_available_on_host():
+            if configuration['only_explicit_host_device_data_transfers']:
+                raise RuntimeError("Dat unavailable on host. Call"
+                                   " ensure_availability_on_device()")
+            self.ensure_availability_on_host()
+
+        # }}}
+
+        v = self._data[:self.dataset.size].view()
+        v.setflags(write=False)
+        return v
+
+    @property
+    @collective
+    def data_ro_with_halos(self):
+        self.global_to_local_begin(READ)
+        self.global_to_local_end(READ)
+        v = self._data.view()
+
+        # {{{ ensure availability on host
+
+        if not self.is_available_on_host():
+            if configuration['only_explicit_host_device_data_transfers']:
+                raise RuntimeError("Dat unavailable on host. Call"
+                                   " ensure_availability_on_device()")
+            self.ensure_availability_on_host()
+
+        # }}}
+
+        v.setflags(write=False)
         return v
 
 
@@ -363,25 +420,25 @@ class Global(petsc_base.Global):
 
     def __init__(self, *args, **kwargs):
         super(Global, self).__init__(*args, **kwargs)
-        self._opencl_data = None
+        self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
+
+    @cached_property
+    def _cl_data(self):
+        self._availability_flag = base.AVAILABLE_ON_BOTH
+        return cl_buffer_from_numpy_array(self._data, 'rw')
 
     def get_availability(self):
-        if self._opencl_data is None:
-            return base.AVAILABLE_ON_HOST_ONLY
-
-        return base.AVAILABLE_ON_BOTH
+        return self._availability_flag
 
     def ensure_availability_on_device(self):
-        if self._opencl_data is None:
-            self._opencl_data = cl_buffer_from_numpy_array(self._data, 'r')
+        if not self.is_available_on_device():
+            cl.enqueue_copy(opencl_backend.queue, self._cl_data, self._data)
+            self._availability_flag = base.AVAILABLE_ON_BOTH
 
     def ensure_availability_on_host(self):
-        # Global once initialized is not over-written so always available
-        # on host.
-        pass
-
-    def is_available_on_device(self):
-        return bool(self.get_availability() & base.AVAILABLE_ON_DEVICE_ONLY)
+        if not self.is_available_on_host():
+            cl.enqueue_copy(opencl_backend.queue, self._data, self._cl_data)
+            self._availability_flag = base.AVAILABLE_ON_BOTH
 
     @property
     def _kernel_args_(self):
@@ -393,8 +450,10 @@ class Global(petsc_base.Global):
 
                 self.ensure_availability_on_device()
 
-            return (self._opencl_data,)
+            self._availability_flag = base.AVAILABLE_ON_DEVICE_ONLY
+            return (self._cl_data,)
         else:
+            self._availability_flag = base.AVAILABLE_ON_HOST_ONLY
             return super(Global, self)._kernel_args_
 
 
@@ -627,10 +686,6 @@ class ParLoop(petsc_base.ParLoop):
 
     printed = set()
 
-    def __init__(self, *args, **kwargs):
-        super(ParLoop, self).__init__(*args, **kwargs)
-        self.kernel.cpp = True
-
     def prepare_arglist(self, iterset, *args):
         nbytes = 0
 
@@ -667,9 +722,10 @@ class ParLoop(petsc_base.ParLoop):
             # Finalise global increments
             for tmp, glob in self._reduced_globals.items():
                 # copy results to the host
-                raise NotImplementedError()
-                cuda.memcpy_dtoh(tmp._data, tmp.device_handle)
+                tmp.ensure_availability_on_host()
+                glob.ensure_availability_on_host()
                 glob._data += tmp._data
+                glob._availability_flag = base.AVAILABLE_ON_HOST_ONLY
 
     @cached_property
     def _jitmodule(self):
@@ -695,7 +751,7 @@ class OpenCLBackend(AbstractPETScBackend):
     ExtrudedSet = ExtrudedSet
     MixedSet = base.MixedSet
     Subset = Subset
-    DataSet = DataSet
+    DataSet = petsc_base.DataSet
     MixedDataSet = petsc_base.MixedDataSet
     Map = Map
     MixedMap = base.MixedMap
