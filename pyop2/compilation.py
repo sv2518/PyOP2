@@ -448,7 +448,7 @@ class CUDACompiler(Compiler):
         from pycuda.compiler import SourceModule
 
         # Determine cache key
-        hsh = md5(str(jitmodule.cache_key).encode())
+        hsh = md5(str(jitmodule.cache_key[1:]).encode())
         hsh.update(self._cc.encode())
         hsh.update("".join(self._cppargs).encode())
         hsh.update("".join(self._ldargs).encode())
@@ -546,7 +546,7 @@ class OpenCLCompiler(Compiler):
         ctx = opencl_backend.context
 
         # Determine cache key
-        hsh = md5(str(jitmodule.cache_key).encode())
+        hsh = md5(str(jitmodule.cache_key[1:]).encode())
         hsh.update(self._cc.encode())
         hsh.update("".join(self._cppargs).encode())
         hsh.update("".join(self._ldargs).encode())

@@ -584,7 +584,7 @@ class JITModule(base.JITModule):
 
     @cached_property
     def get_encoded_cache_key(self):
-        a = md5(str(self.cache_key).encode()).hexdigest()
+        a = md5(str(self.cache_key[1:]).encode()).hexdigest()
         return a
 
     @cached_property
