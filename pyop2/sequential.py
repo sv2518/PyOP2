@@ -278,9 +278,13 @@ class CPUBackend(AbstractPETScBackend):
     Mat = Mat
     Global = Global
     GlobalDataSet = GlobalDataSet
+    PETScVecType = 'standard'
 
-    def PETScVecType(self, comm):
-        return 'seq' if comm.size == 1 else 'mpi'
+    def turn_on_offloading(self):
+        pass
+
+    def turn_off_offloading(self):
+        pass
 
 
 cpu_backend = CPUBackend()

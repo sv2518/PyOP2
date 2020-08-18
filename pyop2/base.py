@@ -698,6 +698,21 @@ class ExtrudedSet(Set):
     def layers_array(self):
         return self._layers
 
+    def get_availability(self):
+        raise NotImplementedError
+
+    def ensure_availability_on_host(self):
+        raise NotImplementedError
+
+    def ensure_availaibility_on_device(self):
+        raise NotImplementedError
+
+    def is_available_on_host(self):
+        return bool(self.get_availability() & AVAILABLE_ON_HOST_ONLY)
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & AVAILABLE_ON_DEVICE_ONLY)
+
 
 class Subset(ExtrudedSet):
 
@@ -789,6 +804,21 @@ class Subset(ExtrudedSet):
             return self._superset.layers_array
         else:
             return self._superset.layers_array[self.indices, ...]
+
+    def get_availability(self):
+        raise NotImplementedError
+
+    def ensure_availability_on_device(self):
+        raise NotImplementedError
+
+    def ensure_availability_on_host(self):
+        raise NotImplementedError
+
+    def is_available_on_host(self):
+        return bool(self.get_availability() & AVAILABLE_ON_HOST_ONLY)
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & AVAILABLE_ON_DEVICE_ONLY)
 
 
 class SetPartition(object):
@@ -2509,6 +2539,21 @@ class Global(DataCarrier, _EmptyDataMixin):
         assert isinstance(other, Global)
         return np.dot(self.data_ro, np.conj(other.data_ro))
 
+    def get_availability(self):
+        raise NotImplementedError
+
+    def ensure_availability_on_host(self):
+        raise NotImplementedError
+
+    def ensure_availaibility_on_device(self):
+        raise NotImplementedError
+
+    def is_available_on_host(self):
+        return bool(self.get_availability() & AVAILABLE_ON_HOST_ONLY)
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & AVAILABLE_ON_DEVICE_ONLY)
+
 
 class Map(object):
 
@@ -2640,6 +2685,21 @@ class Map(object):
     def __le__(self, o):
         """self<=o if o equals self or self._parent <= o."""
         return self == o
+
+    def get_availability(self):
+        raise NotImplementedError
+
+    def ensure_availability_on_host(self):
+        raise NotImplementedError
+
+    def ensure_availaibility_on_device(self):
+        raise NotImplementedError
+
+    def is_available_on_host(self):
+        return bool(self.get_availability() & AVAILABLE_ON_HOST_ONLY)
+
+    def is_available_on_device(self):
+        return bool(self.get_availability() & AVAILABLE_ON_DEVICE_ONLY)
 
 
 class MixedMap(Map, ObjectCached):
