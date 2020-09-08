@@ -507,7 +507,7 @@ class JITModule(base.JITModule):
                     configuration["gpu_tiled_prefetch_of_quad_weights"],)
         elif configuration["gpu_strategy"] == "auto_tile":
             key += (configuration["gpu_planner_kernel_evals"],)
-            assert isinstance(args[1], Set)
+            assert isinstance(args[1], base.Set)
             problem_size = args[1].size
             # FIXME: is this a good heuristic?
             # perform experiments to verify it.
