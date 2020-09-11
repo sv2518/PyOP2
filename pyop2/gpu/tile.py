@@ -1,7 +1,7 @@
 import loopy as lp
 import numpy as np
 import pycuda.driver as cuda
-from math import ceil, sqrt, floor
+from math import ceil, sqrt
 from pytools import memoize_method
 from pycuda.compiler import SourceModule
 from pyop2.utils import cached_property
@@ -101,13 +101,14 @@ class MatvecStageDescr(ImmutableRecord):
 
 class KernelMetadata(ImmutableRecord):
     def __init__(self, **kwargs):
-        assert isinstance(kwargs['iquad'], str)
-        assert isinstance(kwargs['coords'], str)
-        assert isinstance(kwargs['outDoF_init_iname'], str)
+        assert isinstance(kwargs["iquad"], str)
+        assert isinstance(kwargs["coords"], str)
+        assert isinstance(kwargs["outDoF_init_iname"], str)
         assert isinstance(kwargs["quad_weights"], str)
         assert isinstance(kwargs["matvec_stage_descrs"], list)
         assert isinstance(kwargs["eval_results"], frozenset)
-        assert isinstance(kwargs['scatter_iname'], str)
+        assert isinstance(kwargs["scatter_iname"], str)
+        assert isinstance(kwargs["n_trial_derivs"], list)
         super(KernelMetadata, self).__init__(**kwargs)
 
     @property
@@ -371,13 +372,17 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
                                     for insn in kernel.instructions
                                     if 'quadr' in insn.tags]))
 
+    n_trial_derivs = [len([insn for insn in kernel.instructions if 'matvec%d' % i in insn.tags and 'eval_init' in insn.tags])
+                      for i, _ in enumerate(trialDoFs)]
+
     return kernel, KernelMetadata(iquad=iquad,
                                   coords=coords,
                                   outDoF_init_iname=outDoF_init_iname,
                                   quad_weights=quad_weights,
                                   matvec_stage_descrs=matvec_descrs,
                                   scatter_iname=scatter_iname,
-                                  eval_results=eval_results)
+                                  eval_results=eval_results,
+                                  n_trial_derivs=n_trial_derivs)
 
 
 def tiled_transform(kernel, callables_table, tiling_config):
@@ -432,7 +437,7 @@ def tiled_transform(kernel, callables_table, tiling_config):
 
     assert all(len(tile) == 2 for tile in mv_tiles)
     assert len(mv_tiles) == len(matvec_stage_descrs)  # one for each mv stage
-    assert len({op_tile_descr[0] for op_tile_descr in mv_tiles[:-1]}) == 1  # in the general case only one $T_e^r$ is supported
+    assert len({mv_tile[0] for mv_tile in mv_tiles[:-1]}) == 1  # in the general case only one $T_e^r$ is supported
     assert len(q_tile_lens) == 1  # in every action kernel there is a single quadrature loop
 
     T_e_r = mv_tiles[0][0]
@@ -765,156 +770,135 @@ class AutoTiler:
         self.num_candidate_knls = num_candidate_knls
 
     @cached_property
-    def nbasis(self):
-        return int(lp.symbolic.pw_aff_to_expr(self.fem_program.root_kernel.get_iname_bounds('form_i',
-                                                                                            constants_only=True).size))
+    def metadata(self):
+        return inference_which_should_ideally_be_done_by_passing_metadata(self.fem_program.root_kernel)
 
     @cached_property
     def nquad(self):
-        r"""
-        Returns $N_{\mathrm{quad}}$.
-        """
-        return int(lp.symbolic.pw_aff_to_expr(self.fem_program.root_kernel.get_iname_bounds('form_ip',
-                                                                                            constants_only=True).size))
-
-    @property
-    def nTrial(self):
-        r"""
-        Returns $N_{\mathrm{trial}}$.
-        """
-        raise NotImplementedError()
-
-    @property
-    def npMats(self):
-        raise NotImplementedError()
-
-    @property
-    def nqMats(self):
-        raise NotImplementedError()
-
-    @property
-    def nTrialDofs(self):
-        r"""
-        Returns a list of ($N_{\mathrm{trialDof, i}$) for i in [0,
-        $N_\mathrm{trial})$.
-        """
-        raise NotImplementedError()
-
-    @property
-    def nOutDof(self):
-        """
-        Returns $N_{\mathrm{outDoF}}$.
-        """
-        raise NotImplementedError()
-        pass
+        return self.metadata.nquad(self.fem_program.root_kernel)
 
     @cached_property
-    def num_const_matrices(self):
-        """
-        Returns the number of constant matrices in the FEM kernel.
-        """
-        const_matrices_in_quad = set()
-        const_matrices_in_basis = set()
-        const_matrices = frozenset([tv.name
-                                    for tv in self.fem_program.root_kernel.temporary_variables.values()
-                                    if tv.initializer is not None and len(tv.initializer.shape) == 2])
-
-        for insn in self.fem_program.root_kernel.instructions:
-            if 'quadrature' in insn.tags:
-                const_matrices_in_quad.update(insn.read_dependency_names() & const_matrices)
-            if 'basis' in insn.tags:
-                const_matrices_in_basis.update(insn.read_dependency_names() & const_matrices)
-
-        return max(len(const_matrices_in_quad), len(const_matrices_in_basis))
+    def matvec_stages(self):
+        return self.metadata.matvec_stage_descrs
 
     @cached_property
-    def num_func_eval_vars(self):
-        """
-        Returns the number of variables evaluated at the quadrature nodes.
-        """
-        evaluation_variables = (set().union(*[insn.write_dependency_names()
-                                              for insn in self.fem_program.root_kernel.instructions
-                                              if 'quadrature' in insn.tags])
-                                & set().union(*[insn.read_dependency_names()
-                                                for insn in self.fem_program.root_kernel.instructions
-                                                if 'basis' in insn.tags]))
+    def n_trial(self):
+        return self.metadata.n_trial
 
-        return len(evaluation_variables)
+    @cached_property
+    def n_eval_terms(self):
+        return len(self.metadata.eval_results)
 
-    def get_nsync(self, tile_descrs):
+    @cached_property
+    def n_trialDoFs(self):
+        return self.metadata.n_trialDoFs(self.fem_program.root_kernel)
+
+    @cached_property
+    def n_outDoF(self):
+        return self.metadata.n_outDoF(self.fem_program.root_kernel)
+
+    @cached_property
+    def n_trial_derivs(self):
+        return self.metadata.n_trial_derivs
+
+    def get_nsync(self, tiling_config):
         """
         Returns the number of block level synchronization instructions in a
         single kernel execution.
         """
-        (tp_r, tp_c), (tq_r, tq_c) = tile_descrs
-        return (ceil(self.nquad/tp_r) * ceil(self.nbasis/tp_c)
-                + ceil(self.nbasis/tq_r) * ceil(self.nquad/tq_c))
+        tiles = tiling_config.operator_tile_descriptions
+        T_e_r = tiles[0][0]
+        T_e_cs = [tile[1] for tile in tiles[:-1]]
+        T_q_r = tiles[-1][0]
+        T_q_c = tiles[-1][1]
 
+        nsync = ((ceil(self.n_outDoF / T_q_r)) * (ceil(self.nquad / T_q_c))
+                 + sum(ceil(self.nquad / T_e_r)*ceil(n_trialDoF/T_e_c)
+                       for n_trialDoF, T_e_c in zip(self.n_trialDoFs, T_e_cs)))
 
-    def get_shared_mem_allocated(self, tile_descrs):
+        return nsync
 
-        pass
-
-
-    def theoretical_warps_per_sm(self, tiling_config):
+    def get_shared_mem_allocated(self, tiling_config):
         """
-        Returns the number of warps residing on an Streaming Multiprocessor.
+        Returns the shared memory usage for *tling_config* in KB.
         """
+        nc = tiling_config.cells_per_block
+        tiles = tiling_config.operator_tile_descriptions
+        n_eval_mats = [len(mv_stage.deriv_matrices)
+                       for mv_stage in self.matvec_stages[:-1]]
+        n_q_mats = len(self.matvec_stages[-1].derive_matrices)
 
-        cells_per_block = tiling_config.ncells_per_block
-        threads_per_cell = tiling_config.nthreads_per_cell
-        (t1_r, t1_c), (t2_r, t2_c) = tiling_config.operator_tile_descriptions
+        shared_mem = (max(n_mat*tile[0]*tile[1]
+                          for n_mat, tile in zip(n_eval_mats+[n_q_mats, ], tiles))
+                      + self.nquad
+                      + nc*self.nquad*self.n_eval_terms)
 
-        # {{{ computing shared mem usage per block
+        return shared_mem*8e-3
 
-        shared_usage = (self.num_const_matrices*max(t1_r*t1_c, t2_r*t2_c)
-                        + self.nquad
-                        + self.num_func_eval_vars*self.nquad*cells_per_block)
+    def get_eta_simd(self, tiling_config):
+        nc = tiling_config.cells_per_block
+        nwi = tiling_config.threads_per_cell
+        return (nc*nwi) / (32*ceil(nc*nwi/32))
 
-        # convert doubles to KB
-        shared_usage *= 8e-3
+    def get_eta_load_balance(self, tiling_config):
+        tiles = tiling_config.operator_tile_descriptions
+        nwi = tiling_config.threads_per_cell
+        T_e_r = tiles[0][0]
+        T_q_r = tiles[-1][0]
 
-        # }}}
+        n1 = ceil(self.nquad/T_e_r)
+        n2 = ceil(self.n_outDoF/T_q_r)
+        n3 = nwi*self.nquad*ceil(T_e_r/nwi)*sum(n_deriv*n_dof
+                                                for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
+        n4 = nwi*ceil(T_q_r/nwi) * self.n_eval_terms * self.nquad * self.n_outDoF
+        n5 = nwi*self.nquad*ceil((self.nquad % T_e_r)/nwi)*sum(n_deriv*n_dof
+                                                               for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
+        n6 = nwi*ceil((self.n_outDoF % T_q_r)/nwi) * self.n_eval_terms * self.nquad * self.n_outDoF
 
-        warps_per_block = floor((threads_per_cell*cells_per_block)/32)
-        blocks_per_sm = min(96//shared_usage if shared_usage < 48 else 0, 32)
+        useful_flops = (sum(n_deriv*n_dof for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
+                        + self.n_eval_terms * self.nquad * self.n_outDoF)
+
+        flops_executed = (n3*(n1-1) + n5 + n4*(n2-1) + n6)
+
+        eta_load = useful_flops / flops_executed
+
+        return eta_load
+
+    def get_theoretical_blocks_per_sm(self, tiling_config):
+        """
+        Returns the number of blocks residing on a Streaming Multiprocessor.
+        """
+        S = self.get_shared_mem_allocated(tiling_config)
+        Smax_per_sm = 96
+        Smax_per_block = 48
+        Wmax = 32
+        blocks_per_sm = min(Smax_per_sm//S if S < Smax_per_block else 0, Wmax)
+        return blocks_per_sm
+
+    def get_theoretical_warps_per_sm(self, tiling_config):
+        """
+        Returns the number of warps residing on a Streaming Multiprocessor.
+        """
+        blocks_per_sm = self.get_theoretical_blocks_per_sm(tiling_config)
+        warps_per_block = ceil(tiling_config.threads_per_cell*tiling_config.cells_per_block/32)
         warps_per_sm = blocks_per_sm*warps_per_block
-
         return warps_per_sm
 
-    def get_work_efficiency(self, tiling_config):
+    def get_effective_warps_per_sm(self, tiling_config):
         """
-        Returns the efficieny(as a fraction) for a tile defined by t1_r x t1_c,
-        t2_r x t2_c.
-
-        One reason for inefficiency is if the number of threads in a CUDA block
-        aren't a multiple of the warp size.
+        Returns the effective number of warps residing on a Streaming Multiprocessor.
         """
-        cells_per_block = tiling_config.ncells_per_block
-        threads_per_cell = tiling_config.nthreads_per_cell
-        (t1_r, t1_c), (t2_r, t2_c) = tiling_config.operator_tile_descriptions
+        return (self.get_eta_load_balance(tiling_config)
+                * self.get_eta_simd(tiling_config)
+                * self.get_theoretical_warps_per_sm(tiling_config))
 
-        # wasted work in the function evaluation stage
-        wasted_work = self.nbasis*((t1_r % threads_per_cell)*(self.nquad//t1_r)
-                                   + ((self.nquad % t1_r) % threads_per_cell))
-
-        wasted_work += self.nquad*((t2_r % threads_per_cell)*(self.nbasis//t2_r)
-                                   + ((self.nbasis % t2_r) % threads_per_cell))
-
-        wasted_work_fraction = wasted_work / (2*self.nquad*self.nbasis)
-
-        threads_in_block = threads_per_cell * cells_per_block
-        warp_mismatch_factor = threads_in_block / (threads_in_block + (WARP_SIZE - (threads_in_block % WARP_SIZE)))
-
-        return warp_mismatch_factor*(1-wasted_work_fraction)
-
-    def actual_warps_per_sm(self, tiling_config):
+    def get_effective_blocks_per_sm(self, tiling_config):
         """
-        Returns "actual warps residing per SM" = Efficiency * "theoretical
-        warps reising per SM".
+        Returns the effective number of warps residing on a Streaming Multiprocessor.
         """
-        return (self.theoretical_warps_per_sm(tiling_config)
-                * self.get_work_efficiency(tiling_config))
+        return (self.get_eta_load_balance(tiling_config)
+                * self.get_eta_simd(tiling_config)
+                * self.get_theoretical_blocks_per_sm(tiling_config))
 
     @memoize_method
     def estimated_exec_time(self, tiling_config):
@@ -922,22 +906,15 @@ class AutoTiler:
         Returns a metric proportional to the execution time for a
         configuration.
         """
+        nwi = tiling_config.nthreads_per_cell
+        nwarps = self.get_effective_warps_per_sm(tiling_config)
+        nblocks = self.get_effective_blocks_per_sm(tiling_config)
+        nsync = self.get_nsync(tiling_config)
 
-        n_c = tiling_config.ncells_per_block
-        n_t = tiling_config.nthreads_per_cell
-        (t1_r, t1_c), (t2_r, t2_c) = tiling_config.operator_tile_descriptions
-        n_w = self.actual_warps_per_sm(tiling_config)
-
-        if n_w == 0:
+        if nwarps*nblocks == 0:
             return float("inf")
-        n_lb = self.get_local_barriers(tiling_config.operator_tile_descriptions,
-                                       tiling_config.quad_rowtile_lengths)
-        n_blocks = (n_w * 32)/(n_t*n_c)
 
-        # nb, nq = self.nbasis, self.nquad
-        # return (n_t*nb + nb*nq/(n_t*n_c) + nb*nq*(n_t+n_c)/20.0)/n_w
-        # return n_lb/n_blocks
-        return 4.0/n_w + n_lb/n_blocks + 0.25*n_t
+        return 4.0/nwarps + nsync/nblocks + 0.25*nwi
 
     def get_candiate_configs(self):
 
@@ -958,11 +935,12 @@ class AutoTiler:
 
         tiles = []
 
-        for i in range(1, ceil(sqrt(self.nbasis))+1):
+        # FIXME: This needs mixed function space support
+        for i in range(1, ceil(sqrt(self.n_trialDoFs[0]))+1):
             t1_c = ceil(self.nbasis/i)
             for j in range(1, ceil(sqrt(self.nquad))+1):
                 t1_r = ceil(self.nquad/j)
-                for k in range(1, ceil(sqrt(self.nbasis))+1):
+                for k in range(1, ceil(sqrt(self.n_outDoF))+1):
                     t2_r = ceil(self.nbasis/k)
                     for l in range(1, ceil(sqrt(self.nquad))+1):
                         t2_c = ceil(self.nquad/l)
