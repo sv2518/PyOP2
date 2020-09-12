@@ -1,7 +1,7 @@
 import loopy as lp
 import numpy as np
 import pycuda.driver as cuda
-from math import ceil, sqrt
+from math import ceil, sqrt, floor
 from pytools import memoize_method
 from pycuda.compiler import SourceModule
 from pyop2.utils import cached_property
@@ -771,7 +771,15 @@ class AutoTiler:
 
     @cached_property
     def metadata(self):
-        return inference_which_should_ideally_be_done_by_passing_metadata(self.fem_program.root_kernel)
+        knl = self.fem_program.root_kernel
+        noop_insns = set([insn.id
+                          for insn in knl.instructions
+                          if isinstance(insn, lp.NoOpInstruction)])
+        knl = lp.remove_instructions(knl, noop_insns)
+
+        from loopy.transform.instruction import remove_unnecessary_deps
+        knl = remove_unnecessary_deps(knl)
+        return inference_which_should_ideally_be_done_by_passing_metadata(knl)[1]
 
     @cached_property
     def nquad(self):
@@ -822,11 +830,11 @@ class AutoTiler:
         """
         Returns the shared memory usage for *tling_config* in KB.
         """
-        nc = tiling_config.cells_per_block
+        nc = tiling_config.ncells_per_block
         tiles = tiling_config.operator_tile_descriptions
         n_eval_mats = [len(mv_stage.deriv_matrices)
                        for mv_stage in self.matvec_stages[:-1]]
-        n_q_mats = len(self.matvec_stages[-1].derive_matrices)
+        n_q_mats = len(self.matvec_stages[-1].deriv_matrices)
 
         shared_mem = (max(n_mat*tile[0]*tile[1]
                           for n_mat, tile in zip(n_eval_mats+[n_q_mats, ], tiles))
@@ -836,29 +844,29 @@ class AutoTiler:
         return shared_mem*8e-3
 
     def get_eta_simd(self, tiling_config):
-        nc = tiling_config.cells_per_block
-        nwi = tiling_config.threads_per_cell
+        nc = tiling_config.ncells_per_block
+        nwi = tiling_config.nthreads_per_cell
         return (nc*nwi) / (32*ceil(nc*nwi/32))
 
     def get_eta_load_balance(self, tiling_config):
         tiles = tiling_config.operator_tile_descriptions
-        nwi = tiling_config.threads_per_cell
+        nwi = tiling_config.nthreads_per_cell
         T_e_r = tiles[0][0]
         T_q_r = tiles[-1][0]
 
-        n1 = ceil(self.nquad/T_e_r)
-        n2 = ceil(self.n_outDoF/T_q_r)
-        n3 = nwi*self.nquad*ceil(T_e_r/nwi)*sum(n_deriv*n_dof
-                                                for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
-        n4 = nwi*ceil(T_q_r/nwi) * self.n_eval_terms * self.nquad * self.n_outDoF
-        n5 = nwi*self.nquad*ceil((self.nquad % T_e_r)/nwi)*sum(n_deriv*n_dof
-                                                               for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
-        n6 = nwi*ceil((self.n_outDoF % T_q_r)/nwi) * self.n_eval_terms * self.nquad * self.n_outDoF
+        n1 = floor(self.nquad/T_e_r)
+        n2 = floor(self.n_outDoF/T_q_r)
+        n3 = nwi*ceil(T_e_r/nwi)*sum(n_deriv*n_dof
+                                     for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
+        n4 = nwi*ceil(T_q_r/nwi) * self.n_eval_terms * self.nquad
+        n5 = nwi*ceil((self.nquad % T_e_r)/nwi)*sum(n_deriv*n_dof
+                                                    for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
+        n6 = nwi*ceil((self.n_outDoF % T_q_r)/nwi) * self.n_eval_terms * self.nquad
 
-        useful_flops = (sum(n_deriv*n_dof for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
+        useful_flops = (self.nquad * sum(n_deriv*n_dof for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
                         + self.n_eval_terms * self.nquad * self.n_outDoF)
 
-        flops_executed = (n3*(n1-1) + n5 + n4*(n2-1) + n6)
+        flops_executed = (n3*n1 + n5 + n4*n2 + n6)
 
         eta_load = useful_flops / flops_executed
 
@@ -880,7 +888,7 @@ class AutoTiler:
         Returns the number of warps residing on a Streaming Multiprocessor.
         """
         blocks_per_sm = self.get_theoretical_blocks_per_sm(tiling_config)
-        warps_per_block = ceil(tiling_config.threads_per_cell*tiling_config.cells_per_block/32)
+        warps_per_block = ceil(tiling_config.nthreads_per_cell*tiling_config.ncells_per_block/32)
         warps_per_sm = blocks_per_sm*warps_per_block
         return warps_per_sm
 
@@ -937,11 +945,11 @@ class AutoTiler:
 
         # FIXME: This needs mixed function space support
         for i in range(1, ceil(sqrt(self.n_trialDoFs[0]))+1):
-            t1_c = ceil(self.nbasis/i)
+            t1_c = ceil(self.n_trialDoFs[0]/i)
             for j in range(1, ceil(sqrt(self.nquad))+1):
                 t1_r = ceil(self.nquad/j)
                 for k in range(1, ceil(sqrt(self.n_outDoF))+1):
-                    t2_r = ceil(self.nbasis/k)
+                    t2_r = ceil(self.n_outDoF/k)
                     for l in range(1, ceil(sqrt(self.nquad))+1):
                         t2_c = ceil(self.nquad/l)
                         if abs(t1_r*t1_c-t2_r*t2_c)/max(t1_r*t1_c, t2_c*t2_r) < 0.2:
@@ -1036,11 +1044,11 @@ class AutoTiler:
 
             exec_time = np.average(runtimes)
             from pyop2.configuration import configuration
-            print("GFlops/s = {}".format(configuration["flop_count"]/exec_time))
+            print("GFlops/s = {}".format(configuration["gflop_count"]/exec_time))
             print(75*'=')
 
             with open(configuration["output_file"], 'a') as f:
-                f.write(tiling_config.stringify() + ", %.1f, %s\n" % (configuration["flop_count"]/exec_time,
+                f.write(tiling_config.stringify() + ", %.1f, %s\n" % (configuration["gflop_count"]/exec_time,
                                                                       configuration["compute_tag"]))
 
             if exec_time < best_performing_time:
