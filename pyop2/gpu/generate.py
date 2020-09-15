@@ -22,9 +22,7 @@ def get_loopy_target(target):
         raise NotImplementedError()
 
 
-def generate_gpu_kernel(program, args=None, argshapes=None, target=None):
-    # Kernel transformations
-    program = program.copy(target=get_loopy_target(target))
+def preprocess_gpu_kernel(program):
     kernel = program.root_kernel
 
     # changing the address space of temps
@@ -72,6 +70,15 @@ def generate_gpu_kernel(program, args=None, argshapes=None, target=None):
             new_args.append(arg)
 
     kernel = kernel.copy(instructions=new_insns, args=new_args)
+
+    return program.with_root_kernel(kernel)
+
+
+def generate_gpu_kernel(program, args=None, argshapes=None, target=None):
+    # Kernel transformations
+    program = program.copy(target=get_loopy_target(target))
+    program = preprocess_gpu_kernel(program)
+    kernel = program.root_kernel
     # FIXME: These might not always be true
     # Might need to be removed before going full production
     kernel = lp.assume(kernel, "start=0")
