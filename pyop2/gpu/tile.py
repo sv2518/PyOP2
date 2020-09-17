@@ -682,7 +682,8 @@ def tiled_transform(kernel, callables_table, tiling_config):
 
         # schedulability constraint requires irow_inner_outer to be duplicated
         # within the eval_init stage
-        kernel = lp.duplicate_inames(kernel, 'irow%d_inner_outer' % i, within="tag:eval_init")
+        kernel = lp.duplicate_inames(kernel, 'irow%d_inner_outer' % i, new_inames='irow%d_inner_outer_init' % i, within="tag:eval_init")
+        kernel = lp.tag_inames(kernel, "irow%d_inner_outer:unr,irow%d_inner_outer_init:unr" % (i, i))
 
     # {{{ special case: tile length matches with the column length of the deriv matrix
 
@@ -692,6 +693,7 @@ def tiled_transform(kernel, callables_table, tiling_config):
         kernel = lp.add_inames_to_insn(kernel, 'icoltile%d' % i, 'tag:matvec%d or tag:eval_wrap_up' % i)
         kernel = lp.rename_iname(kernel, "irow_eval_inner_inner", "irow%d_inner_inner" % i, within="tag:eval_wrap_up or tag:matvec%d" % i)
         kernel = lp.rename_iname(kernel, "irow_eval_inner_outer", "irow%d_inner_outer" % i, within="tag:eval_wrap_up or tag:matvec%d" % i)
+        kernel = lp.tag_inames(kernel, "irow%d_inner_outer:unr" % i)
     else:
         redn_accumulators = [insn.assignee_name
                              for insn in kernel.instructions
@@ -702,9 +704,10 @@ def tiled_transform(kernel, callables_table, tiling_config):
 
         kernel = lp.rename_iname(kernel, "irow_eval_inner_inner", "irow%d_inner_inner" % i, within="tag:matvec%d" % i)
         kernel = lp.rename_iname(kernel, "irow_eval_inner_outer", "irow%d_inner_outer" % i, within="tag:matvec%d" % i)
-        kernel = lp.duplicate_inames(kernel, 'irow%d_inner_outer' % i, within="tag:eval_init")
+        kernel = lp.duplicate_inames(kernel, 'irow%d_inner_outer' % i, new_inames='irow%d_inner_outer_init' % i, within="tag:eval_init")
         kernel = lp.rename_iname(kernel, "irow_eval_inner_inner", "irow_eval_wrap_up_inner_inner", within="tag:eval_wrap_up")
         kernel = lp.rename_iname(kernel, "irow_eval_inner_outer", "irow_eval_wrap_up_inner_outer", within="tag:eval_wrap_up")
+        kernel = lp.tag_inames(kernel, "irow%d_inner_outer:unr,irow%d_inner_outer_init:unr,irow_eval_wrap_up_inner_outer:unr" % (i, i))
 
     if T_q_c == nquad:
         # Loop fusion rather than privatization: leads to less register pressure
@@ -723,7 +726,8 @@ def tiled_transform(kernel, callables_table, tiling_config):
 
         kernel = lp.rename_iname(kernel, "irow_quadr_inner_inner", "irow_quadr_wrap_up_inner_inner", within="tag:quadr_wrap_up")
         kernel = lp.rename_iname(kernel, "irow_quadr_inner_outer", "irow_quadr_wrap_up_inner_outer", within="tag:quadr_wrap_up")
-        kernel = lp.duplicate_inames(kernel, 'irow%d_inner_outer' % n_trial, within="tag:quadr_init")
+        kernel = lp.duplicate_inames(kernel, 'irow%d_inner_outer' % n_trial, new_inames='irow%d_inner_outer_init' % n_trial, within="tag:quadr_init")
+        kernel = lp.tag_inames(kernel, "irow%d_inner_outer:unr,irow%d_inner_outer_init:unr,irow_quadr_wrap_up_inner_outer:unr" % (n_trial, n_trial))
 
     # }}}
 
