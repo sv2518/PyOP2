@@ -88,12 +88,12 @@ def _make_tv_array_arg(tv):
 
 
 class MatvecStageDescr(ImmutableRecord):
-    def __init__(self, dof_name, row_iname, col_iname, deriv_matrices):
-        assert isinstance(dof_name, str)
+    def __init__(self, dof_names, row_iname, col_iname, deriv_matrices):
+        assert isinstance(dof_names, tuple)
         assert isinstance(row_iname, str)
         assert isinstance(col_iname, str)
-        assert isinstance(deriv_matrices, set)
-        super(MatvecStageDescr, self).__init__(dof_name=dof_name,
+        assert isinstance(deriv_matrices, frozenset)
+        super(MatvecStageDescr, self).__init__(dof_names=dof_names,
                                                row_iname=row_iname,
                                                col_iname=col_iname,
                                                deriv_matrices=deriv_matrices)
@@ -113,7 +113,7 @@ class KernelMetadata(ImmutableRecord):
 
     @property
     def outDoF(self):
-        return self.matvec_stage_descrs[-1].dof_name
+        return self.matvec_stage_descrs[-1].dof_names[0]
 
     def nquad(self, kernel):
         return int(lp.symbolic.pw_aff_to_expr(kernel.get_iname_bounds(self.iquad, constants_only=True).size))
@@ -128,8 +128,13 @@ class KernelMetadata(ImmutableRecord):
                 for itrialDoF in itrialDoFs]
 
     @property
-    def n_trial(self):
+    def n_trial_stages(self):
         return len(self.matvec_stage_descrs) - 1
+
+
+def are_mv_stages_similar(mv_stage_x, mv_stage_y):
+    return ((mv_stage_x.deriv_matrices == mv_stage_y.deriv_matrices)
+            and (mv_stage_x.col_iname == mv_stage_x.col_iname))
 
 
 def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
@@ -329,11 +334,11 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
                                      ' or '.join(['id:%s' % eval_init_insn_id
                                                   for eval_init_insn_id in eval_init_insn_ids]))
 
-        deriv_matrices_in_current_mv_stg = set().union(*(insn.read_dependency_names()
-                                                         for insn in kernel.instructions
-                                                         if 'matvec%d' % i in insn.tags)) & deriv_matrices
+        deriv_matrices_in_current_mv_stg = frozenset().union(*(insn.read_dependency_names()
+                                                               for insn in kernel.instructions
+                                                               if 'matvec%d' % i in insn.tags)) & deriv_matrices
 
-        matvec_descrs.append(MatvecStageDescr(trialDoF, iquad, redn_iname, deriv_matrices_in_current_mv_stg))
+        matvec_descrs.append(MatvecStageDescr((trialDoF,), iquad, redn_iname, deriv_matrices_in_current_mv_stg))
 
     # }}}
 
@@ -349,11 +354,11 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
     kernel = lp.tag_instructions(kernel, 'quadr_init', 'tag:gather and'
                                  ' tag:matvec%d' % (i+1))
 
-    deriv_matrices_in_current_mv_stg = set().union(*(insn.read_dependency_names()
-                                                     for insn in kernel.instructions
-                                                     if 'matvec%d' % (i+1) in insn.tags)) & deriv_matrices
+    deriv_matrices_in_current_mv_stg = frozenset().union(*(insn.read_dependency_names()
+                                                           for insn in kernel.instructions
+                                                           if 'matvec%d' % (i+1) in insn.tags)) & deriv_matrices
 
-    matvec_descrs.append(MatvecStageDescr(outDoF, quadr_stage_DoF_iname, iquad, deriv_matrices_in_current_mv_stg))
+    matvec_descrs.append(MatvecStageDescr((outDoF,), quadr_stage_DoF_iname, iquad, deriv_matrices_in_current_mv_stg))
 
     # }}}
 
@@ -364,9 +369,41 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
     eval_results = (frozenset().union(*[insn.write_dependency_names()
                                         for insn in kernel.instructions
                                         if 'eval_wrap_up' in insn.tags])
-                    & set().union(*[insn.read_dependency_names()
-                                    for insn in kernel.instructions
-                                    if 'quadr' in insn.tags]))
+                    & frozenset().union(*[insn.read_dependency_names()
+                                        for insn in kernel.instructions
+                                        if 'quadr' in insn.tags]))
+
+    # {{{ fuse matvec stages
+
+    # to_be_fused_mv_stages: list of tuples of MV stages which are to be fused.
+    to_be_fused_mv_stages = []
+
+    for i, mv_stage_i in enumerate(matvec_descrs):
+        if any((i, mv_stage_i) in to_be_fused_stage for to_be_fused_stage in to_be_fused_mv_stages):
+            continue
+        to_be_fused_mv_stage = ((i, mv_stage_i), )
+        # do not fuse 'quadr' stage matvec with any other matvec
+        for j, mv_stage_j in enumerate(matvec_descrs[i+1:-1], start=i+1):
+            if are_mv_stages_similar(mv_stage_i, mv_stage_j):
+                to_be_fused_mv_stage = to_be_fused_mv_stage + ((j, mv_stage_j),)
+
+        to_be_fused_mv_stages.append(to_be_fused_mv_stage)
+
+    mv_stage_descrs_post_fusion = []
+
+    for to_be_fused_mv_stage in to_be_fused_mv_stages:
+        current_mv_stg_idx = len(mv_stage_descrs_post_fusion)
+
+        def retag_insn(insn):
+            new_tags = frozenset(tag for tag in insn.tags if not tag.startswith('matvec')) | frozenset(['matvec%d' % current_mv_stg_idx])
+            return insn.copy(tags=new_tags)
+
+        kernel = lp.map_instructions(kernel, ' or '.join("tag:matvec%d" % i for i, _ in to_be_fused_mv_stage), retag_insn)
+        fused_dof_names = tuple(mv_stg.dof_names[0] for _, mv_stg in to_be_fused_mv_stage)
+        new_mv_stage = to_be_fused_mv_stage[0][1].copy(dof_names=fused_dof_names)
+        mv_stage_descrs_post_fusion.append(new_mv_stage)
+
+    # }}}
 
     n_trial_derivs = [len([insn for insn in kernel.instructions if 'matvec%d' % i in insn.tags and 'eval_init' in insn.tags])
                       for i, _ in enumerate(trialDoFs)]
@@ -375,7 +412,7 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
                                   coords=coords,
                                   outDoF_init_iname=outDoF_init_iname,
                                   quad_weights=quad_weights,
-                                  matvec_stage_descrs=matvec_descrs,
+                                  matvec_stage_descrs=mv_stage_descrs_post_fusion,
                                   scatter_iname=scatter_iname,
                                   eval_results=eval_results,
                                   n_trial_derivs=n_trial_derivs)
@@ -414,7 +451,7 @@ def tiled_transform(kernel, callables_table, tiling_config):
     nquad = metadata.nquad(kernel)
     n_outDoF = metadata.n_outDoF(kernel)
     n_trialDoFs = metadata.n_trialDoFs(kernel)
-    n_trial = metadata.n_trial
+    n_trial = metadata.n_trial_stages
 
     # }}}
 
@@ -795,8 +832,8 @@ class AutoTiler:
         return self.metadata.matvec_stage_descrs
 
     @cached_property
-    def n_trial(self):
-        return self.metadata.n_trial
+    def n_trial_stages(self):
+        return self.metadata.n_trial_stages
 
     @cached_property
     def n_eval_terms(self):
