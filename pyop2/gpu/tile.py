@@ -103,6 +103,7 @@ class KernelMetadata(ImmutableRecord):
     def __init__(self, **kwargs):
         assert isinstance(kwargs["iquad"], str)
         assert isinstance(kwargs["coords"], str)
+        assert isinstance(kwargs["trialDoF_gather_inames"], list)
         assert isinstance(kwargs["outDoF_init_iname"], str)
         assert isinstance(kwargs["quad_weights"], str)
         assert isinstance(kwargs["matvec_stage_descrs"], list)
@@ -405,6 +406,32 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
 
     # }}}
 
+    # {{{ trialDoF gather iname
+
+    # Assumption the trialDoF gather instruction is as follows:
+    # trialDoF[trialDoF_gather_iname, ...] <- datxx[mapxx[trialDof_gather_iname, ...], ...]
+
+    trialDoF_to_gather_inames = {}
+    trialDoF_gather_inames = []
+    for trialDoF in trialDoFs:
+        trialDoF_gather_iname, = [insn.assignee.index_tuple[1].name
+                                  for insn in kernel.instructions
+                                  if (trialDoF == insn.assignee_name)]
+        trialDoF_to_gather_inames[trialDoF] = trialDoF_gather_iname
+
+    for mv_stage in mv_stage_descrs_post_fusion[:-1]:
+        fused_trialDoF_gather_iname = trialDoF_to_gather_inames[mv_stage.dof_names[0]]
+        for trialDoF in mv_stage.dof_names[1:]:
+            if trialDoF_to_gather_inames[trialDoF] == fused_trialDoF_gather_iname:
+                continue
+            kernel = lp.rename_iname(kernel, trialDoF_to_gather_inames[trialDoF],
+                                     fused_trialDoF_gather_iname,
+                                     existing_ok=True)
+
+        trialDoF_gather_inames.append(fused_trialDoF_gather_iname)
+
+    # }}}
+
     n_trial_derivs = [len([insn for insn in kernel.instructions if 'matvec%d' % i in insn.tags and 'eval_init' in insn.tags])
                       for i, _ in enumerate(trialDoFs)]
 
@@ -415,6 +442,7 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
                                   matvec_stage_descrs=mv_stage_descrs_post_fusion,
                                   scatter_iname=scatter_iname,
                                   eval_results=eval_results,
+                                  trialDoF_gather_inames=trialDoF_gather_inames,
                                   n_trial_derivs=n_trial_derivs)
 
 
@@ -452,6 +480,7 @@ def tiled_transform(kernel, callables_table, tiling_config):
     n_outDoF = metadata.n_outDoF(kernel)
     n_trialDoFs = metadata.n_trialDoFs(kernel)
     n_trial = metadata.n_trial_stages
+    trialDoF_gather_inames = metadata.trialDoF_gather_inames
 
     # }}}
 
@@ -538,8 +567,10 @@ def tiled_transform(kernel, callables_table, tiling_config):
 
     # Splitting row in eval stage
     kernel = lp.split_iname(kernel, "irow_eval", T_e_r, outer_iname="irowtile_eval")
+
     # Splitting column in eval stage
-    for i, T_e_c in enumerate(T_e_cs):
+    for i, (T_e_c, gather_iname) in enumerate(zip(T_e_cs, trialDoF_gather_inames)):
+        kernel = lp.rename_iname(kernel, gather_iname, "icol%d" % i, existing_ok=True)
         kernel = lp.split_iname(kernel, "icol%d" % i, T_e_c, outer_iname='icoltile%d' % i)
 
     # Splitting row in the quadr stage
@@ -547,7 +578,25 @@ def tiled_transform(kernel, callables_table, tiling_config):
     # Splitting column in quadr stage
     kernel = lp.split_iname(kernel, "icol%d" % n_trial, T_q_c, outer_iname="icoltile%d" % n_trial)
 
-    # {{{ Prefetch inputDoFs (not implemented)
+    # {{{ Also, limit the gathering of the trialDoF to the current column tile.
+
+    for i, mv_stage, T_e_c, gather_iname in zip(range(n_trial), matvec_stage_descrs, T_e_cs, trialDoF_gather_inames):
+        for trialDoF in mv_stage.dof_names:
+            kernel = lp.split_array_axis(kernel, trialDoF, 0, T_e_c)
+            kernel = remove_axis(kernel, trialDoF, 0)
+
+        kernel = lp.add_inames_to_insn(kernel, 'irowtile_eval', ' or '.join('writes:%s' % trialDoF
+                                                                            for trialDoF in mv_stage.dof_names))
+
+        if i > 1:
+            # enforce a dependency of gather for the DoFs used in i+1 matvec
+            # stage on the previous matvec. (helps in enforcing separate live
+            # ranges).
+            kernel = lp.add_dependency(kernel, 'iname:%s_inner' % gather_iname, 'tag:matvec%d' % (i-1))
+
+    # }}}
+
+    # {{{ Prefetch trialDoFs (not implemented)
 
     if tiling_config.load_input_to_shared:
         raise NotImplementedError("More like NotYetImplementedError.")
