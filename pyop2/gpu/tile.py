@@ -500,6 +500,14 @@ def tiled_transform(kernel, callables_table, tiling_config):
     T_q_r = mv_tiles[-1][0]
     T_q_c = mv_tiles[-1][1]
 
+    quad_tiles = tiling_config.quad_rowtile_lengths
+    if quad_tiles == ():
+        quad_tiles = (nquad, )
+
+    quad_tile, = quad_tiles
+    kernel = lp.split_iname(kernel, iquad, quad_tile, outer_iname='iquad_tile')
+    kernel = lp.rename_iname(kernel, iquad+"_inner", iquad)
+
     # {{{ privatize temps for function evals and make them LOCAL
 
     kernel = lp.privatize_temporaries_with_inames(kernel, iquad, eval_results)
@@ -585,8 +593,8 @@ def tiled_transform(kernel, callables_table, tiling_config):
             kernel = lp.split_array_axis(kernel, trialDoF, 0, T_e_c)
             kernel = remove_axis(kernel, trialDoF, 0)
 
-        kernel = lp.add_inames_to_insn(kernel, 'irowtile_eval', ' or '.join('writes:%s' % trialDoF
-                                                                            for trialDoF in mv_stage.dof_names))
+        kernel = lp.add_inames_to_insn(kernel, 'iquad_tile,irowtile_eval', ' or '.join('writes:%s' % trialDoF
+                                                                                       for trialDoF in mv_stage.dof_names))
 
         if i > 1:
             # enforce a dependency of gather for the DoFs used in i+1 matvec
@@ -638,13 +646,13 @@ def tiled_transform(kernel, callables_table, tiling_config):
         for istage, mv_stg_descr in enumerate(matvec_stage_descrs):
             if istage < n_trial:
                 # eval stage
-                fetch_outer_inames = 'iblock,icoltile{0},irowtile_eval'.format(istage)
+                fetch_outer_inames = 'iquad_tile,iblock,icoltile{0},irowtile_eval'.format(istage)
                 sweep_inames = "irow_eval_inner, icol{0}_inner".format(istage)
                 tr = T_e_r
                 tc = T_e_cs[istage]
             else:
                 # quadr stage
-                fetch_outer_inames = 'iblock,icoltile{0},irowtile_quadr'.format(istage)
+                fetch_outer_inames = 'iquad_tile,iblock,icoltile{0},irowtile_quadr'.format(istage)
                 sweep_inames = "irow_quadr_inner, icol{0}_inner".format(istage)
                 tr = T_q_r
                 tc = T_q_c
@@ -721,7 +729,7 @@ def tiled_transform(kernel, callables_table, tiling_config):
             raise NotImplementedError("Not sure if this is any fruitful!")
         else:
             sweep_inames = ['irowtile_eval', 'irow_eval_inner']
-            fetch_outer_inames = 'iblock'
+            fetch_outer_inames = 'iquad_tile,iblock'
 
         from loopy.transform.data import add_prefetch_for_single_kernel
         kernel = add_prefetch_for_single_kernel(kernel, callables_table,
@@ -820,6 +828,8 @@ def tiled_transform(kernel, callables_table, tiling_config):
         kernel = lp.rename_iname(kernel, "irow_quadr_inner_outer", "irow_quadr_wrap_up_inner_outer", within="tag:quadr_wrap_up")
         kernel = lp.duplicate_inames(kernel, 'irow%d_inner_outer' % n_trial, new_inames='irow%d_inner_outer_init' % n_trial, within="tag:quadr_init")
         kernel = lp.tag_inames(kernel, "irow%d_inner_outer:unr,irow%d_inner_outer_init:unr,irow_quadr_wrap_up_inner_outer:unr" % (n_trial, n_trial))
+
+    kernel = lp.add_inames_to_insn(kernel, 'iquad_tile', 'tag:quadr_init or tag:quadr_wrap_up')
 
     # }}}
 
