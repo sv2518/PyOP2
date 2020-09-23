@@ -3,7 +3,11 @@ import numpy
 
 import loopy
 from loopy.symbolic import SubArrayRef
-from loopy.types import OpaqueType
+from loopy.expression import dtype_to_type_context
+from pymbolic.mapper.stringifier import PREC_NONE
+from pymbolic import var
+from loopy.types import NumpyType, OpaqueType
+import abc
 
 import islpy as isl
 import pymbolic.primitives as pym
@@ -31,6 +35,21 @@ from pyop2.codegen.representation import (Index, FixedIndex, RuntimeIndex,
                                           Symbol, Zero, Sum, Min, Max, Product)
 from pyop2.codegen.representation import (PackInst, UnpackInst, KernelInst, PreUnpackInst)
 from pytools import ImmutableRecord
+
+# Read c files  for linear algebra callables in on import
+import os
+from pyop2.mpi import COMM_WORLD
+if COMM_WORLD.rank == 0:
+    with open(os.path.dirname(__file__)+"/c/inverse.c", "r") as myfile:
+        inverse_preamble = myfile.read()
+    with open(os.path.dirname(__file__)+"/c/solve.c", "r") as myfile:
+        solve_preamble = myfile.read()
+else:
+    solve_preamble = None
+    inverse_preamble = None
+
+inverse_preamble = COMM_WORLD.bcast(inverse_preamble, root=0)
+solve_preamble = COMM_WORLD.bcast(solve_preamble, root=0)
 
 
 class Bag(object):
@@ -83,6 +102,104 @@ def petsc_function_lookup(target, identifier):
     if identifier in petsc_functions:
         return PetscCallable(name=identifier)
     return None
+
+
+class LACallable(loopy.ScalarCallable, metaclass=abc.ABCMeta):
+    """
+    The LACallable (Linear algebra callable)
+    replaces loopy.CallInstructions to linear algebra functions
+    like solve or inverse by LAPACK calls.
+    """
+    def __init__(self, name, arg_id_to_dtype=None,
+                 arg_id_to_descr=None, name_in_target=None):
+
+        super(LACallable, self).__init__(name,
+                                         arg_id_to_dtype=arg_id_to_dtype,
+                                         arg_id_to_descr=arg_id_to_descr)
+        self.name = name
+        self.name_in_target = name_in_target if name_in_target else name
+
+    @abc.abstractmethod
+    def generate_preambles(self, target):
+        pass
+
+    def with_types(self, arg_id_to_dtype, kernel, callables_table):
+        dtypes = OrderedDict()
+        for i in range(len(arg_id_to_dtype)):
+            if arg_id_to_dtype.get(i) is None:
+                # the types provided aren't mature enough to specialize the
+                # callable
+                return (self.copy(arg_id_to_dtype=arg_id_to_dtype),
+                        callables_table)
+            else:
+                mat_dtype = arg_id_to_dtype[i].numpy_dtype
+                dtypes[i] = NumpyType(mat_dtype)
+        dtypes[-1] = NumpyType(dtypes[0].dtype)
+
+        return (self.copy(name_in_target=self.name_in_target,
+                arg_id_to_dtype=dtypes),
+                callables_table)
+
+    def emit_call_insn(self, insn, target, expression_to_code_mapper):
+        assert self.is_ready_for_codegen()
+        assert isinstance(insn, loopy.CallInstruction)
+
+        parameters = insn.expression.parameters
+
+        parameters = list(parameters)
+        par_dtypes = [self.arg_id_to_dtype[i] for i, _ in enumerate(parameters)]
+
+        parameters.append(insn.assignees[-1])
+        par_dtypes.append(self.arg_id_to_dtype[0])
+
+        mat_descr = self.arg_id_to_descr[0]
+        arg_c_parameters = [
+            expression_to_code_mapper(
+                par,
+                PREC_NONE,
+                dtype_to_type_context(target, par_dtype),
+                par_dtype
+            ).expr
+            for par, par_dtype in zip(parameters, par_dtypes)
+        ]
+        c_parameters = [arg_c_parameters[-1]]
+        c_parameters.extend([arg for arg in arg_c_parameters[:-1]])
+        c_parameters.append(numpy.int32(mat_descr.shape[1]))  # n
+        return var(self.name_in_target)(*c_parameters), False
+
+
+class INVCallable(LACallable):
+    """
+    The InverseCallable replaces loopy.CallInstructions to "inverse"
+    functions by LAPACK getri.
+    """
+    def generate_preambles(self, target):
+        assert isinstance(target, loopy.CTarget)
+        yield ("inverse", inverse_preamble)
+
+
+def inv_fn_lookup(target, identifier):
+    if identifier == 'inv':
+        return INVCallable(name='inverse')
+    else:
+        return None
+
+
+class SolveCallable(LACallable):
+    """
+    The SolveCallable replaces loopy.CallInstructions to "solve"
+    functions by LAPACK getrs.
+    """
+    def generate_preambles(self, target):
+        assert isinstance(target, loopy.CTarget)
+        yield ("solve", solve_preamble)
+
+
+def solve_fn_lookup(target, identifier):
+    if identifier == 'solve':
+        return SolveCallable(name='solve')
+    else:
+        return None
 
 
 class _PreambleGen(ImmutableRecord):
@@ -230,7 +347,7 @@ def loop_nesting(instructions, deps, outer_inames, kernel_name):
             if isinstance(insn.children[1], (Zero, Literal)):
                 nesting[insn] = outer_inames
             else:
-                nesting[insn] = runtime_indices([insn])
+                nesting[insn] = runtime_indices([insn]) | runtime_indices(insn.label.within_inames)
         else:
             assert isinstance(insn, FunctionCall)
             if insn.name in (petsc_functions | {kernel_name}):
@@ -392,7 +509,7 @@ def generate(builder, wrapper_name=None, include_math=True, include_petsc=True, 
     context.instruction_dependencies = deps
 
     statements = list(statement(insn, context) for insn in instructions)
-    # remote the dummy instructions (they were only used to ensure
+    # remove the dummy instructions (they were only used to ensure
     # that the kernel knows about the outer inames).
     statements = list(s for s in statements if not isinstance(s, DummyInstruction))
 
@@ -473,11 +590,10 @@ def generate(builder, wrapper_name=None, include_math=True, include_petsc=True, 
     from coffee.base import Node
 
     if isinstance(kernel._code, loopy.LoopKernel):
+        from loopy.transform.callable import _match_caller_callee_argument_dimension_
         knl = kernel._code
         wrapper = loopy.register_callable_kernel(wrapper, knl)
-        from loopy.transform.callable import _match_caller_callee_argument_dimension_
         wrapper = _match_caller_callee_argument_dimension_(wrapper, knl.name)
-        wrapper = loopy.inline_callable_kernel(wrapper, knl.name)
     else:
         # kernel is a string, add it to preamble
         if isinstance(kernel._code, Node):
