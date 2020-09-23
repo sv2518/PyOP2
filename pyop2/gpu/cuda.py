@@ -599,10 +599,13 @@ class JITModule(base.JITModule):
         from pyop2.codegen.rep2loopy import generate
         from pyop2.gpu.generate import generate_gpu_kernel
 
-        builder = WrapperBuilder(iterset=self._iterset, iteration_region=self._iteration_region, pass_layer_to_kernel=self._pass_layer_arg)
+        builder = WrapperBuilder(kernel=self._kernel,
+                                 iterset=self._iterset,
+                                 iteration_region=self._iteration_region,
+                                 pass_layer_to_kernel=self._pass_layer_arg)
+
         for arg in self._args:
             builder.add_argument(arg)
-        builder.set_kernel(self._kernel)
 
         wrapper = generate(builder, include_petsc=False, include_complex=False)
 
