@@ -48,6 +48,8 @@ if COMM_WORLD.rank == 0:
         inverse_vect_batch_preamble = myfile.read()
     with open(os.path.dirname(__file__)+"/c/solve_vect_batch.c", "r") as myfile:
         solve_vect_batch_preamble = myfile.read()
+    with open(os.path.dirname(__file__)+"/c/solve_vect_batch_matfree.c", "r") as myfile:
+        solve_vect_batch_matfree_preamble = myfile.read()
     with open(os.path.dirname(__file__)+"/c/inverse_vect_nonbatch.c", "r") as myfile:
         inverse_vect_nonbatch_preamble = myfile.read()
     with open(os.path.dirname(__file__)+"/c/solve_vect_nonbatch.c", "r") as myfile:
@@ -225,10 +227,20 @@ class SolveCallable(LACallable):
             assert isinstance(target, loopy.CTarget)
             yield ("zsolve", solve_preamble)
 
+class MatfreeSolveCallable(LACallable):
+    """
+    The SolveCallable replaces loopy.CallInstructions to "solve"
+    functions by LAPACK getrs.
+    """
+    def generate_preambles(self, target):
+        assert isinstance(target, loopy.CVecTarget)
+        yield ("matfree_solve", solve_vect_batch_matfree_preamble)
 
 def solve_fn_lookup(target, identifier):
     if identifier == 'solve':
         return SolveCallable(name='solve')
+    elif identifier == 'matfree_solve':
+        return MatfreeSolveCallable(name='matfree')
     else:
         return None
 
