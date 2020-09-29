@@ -233,7 +233,7 @@ class MatfreeSolveCallable(LACallable):
     functions by LAPACK getrs.
     """
     def generate_preambles(self, target):
-        assert isinstance(target, loopy.CVecTarget)
+        assert isinstance(target, loopy.CVecTarget), "Local matrixfree solvers are only available in vectorised form."
         yield ("zmatfree_solve", solve_vect_batch_matfree_preamble)
 
 def solve_fn_lookup(target, identifier):
