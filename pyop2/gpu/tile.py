@@ -825,8 +825,18 @@ def tiled_transform(kernel, callables_table, tiling_config):
 
     # }}}
 
-    kernel = lp.remove_unused_inames(kernel)
+    # {{{ setting loop priorities
+
+    # disregard all previous priorities
     kernel = kernel.copy(loop_priority=frozenset())
+
+    # unroll loops must be innermost
+    for i in range(n_trial+1):
+        kernel = lp.prioritize_loops(kernel,
+                                     'icol{0}_inner,irow{0}_inner_outer'.format(i))
+    # }}}
+
+    kernel = lp.remove_unused_inames(kernel)
 
     return kernel, args_to_make_global
 
