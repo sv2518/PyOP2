@@ -904,6 +904,30 @@ class AutoTiler:
     def n_trial_derivs(self):
         return self.metadata.n_trial_derivs
 
+    @cached_property
+    def trialDoF_shapes(self):
+        sizes = [[self.fem_program.root_kernel.temporary_variables[dof_name].shape
+                  for dof_name in mv_stage.dof_names]
+                 for mv_stage in self.matvec_stages[:-1]]
+        return sizes
+
+    @cached_property
+    def outDoF_shape(self):
+        outDoF = self.metadata.outDoF
+        return self.fem_program.root_kernel.temporary_variables[outDoF].shape
+
+    @cached_property
+    def coords_shape(self):
+        coords = self.metadata.coords
+        return self.fem_program.root_kernel.temporary_variables[coords].shape
+
+    @cached_property
+    def deriv_mat_shapes(self):
+        sizes = [[self.fem_program.root_kernel.temporary_variables[mat_name].shape
+                  for mat_name in mv_stage.deriv_matrices]
+                 for mv_stage in self.matvec_stages]
+        return sizes
+
     def get_nsync(self, tiling_config):
         """
         Returns the number of block level synchronization instructions in a
@@ -914,29 +938,33 @@ class AutoTiler:
         T_e_cs = [tile[1] for tile in tiles[:-1]]
         T_q_r = tiles[-1][0]
         T_q_c = tiles[-1][1]
+        quad_tile_len, = tiling_config.quad_rowtile_lengths
 
-        nsync = ((ceil(self.n_outDoF / T_q_r)) * (ceil(self.nquad / T_q_c))
-                 + sum(ceil(self.nquad / T_e_r)*ceil(n_trialDoF/T_e_c)
-                       for n_trialDoF, T_e_c in zip(self.n_trialDoFs, T_e_cs)))
+        def get_nsync_for_quad(nq):
+            return ((ceil(self.n_outDoF / T_q_r)) * (ceil(nq / T_q_c))
+                     + sum(ceil(nq / T_e_r)*ceil(n_trialDoF/T_e_c)
+                           for n_trialDoF, T_e_c in zip(self.n_trialDoFs, T_e_cs)))
 
-        return nsync
+        return (floor(self.nquad/quad_tile_len)*get_nsync_for_quad(quad_tile_len)
+                + get_nsync_for_quad(self.nquad % quad_tile_len))
 
     def get_shared_mem_allocated(self, tiling_config):
         """
-        Returns the shared memory usage for *tling_config* in KB.
+        Returns the shared memory usage for *tiling_config* in bytes.
         """
         nc = tiling_config.ncells_per_block
         tiles = tiling_config.operator_tile_descriptions
+        quad_tile_len, = tiling_config.quad_rowtile_lengths
         n_eval_mats = [len(mv_stage.deriv_matrices)
                        for mv_stage in self.matvec_stages[:-1]]
         n_q_mats = len(self.matvec_stages[-1].deriv_matrices)
 
         shared_mem = (max(n_mat*tile[0]*tile[1]
                           for n_mat, tile in zip(n_eval_mats+[n_q_mats, ], tiles))
-                      + self.nquad
-                      + nc*self.nquad*self.n_eval_terms)
+                      + quad_tile_len
+                      + nc*quad_tile_len*self.n_eval_terms)
 
-        return shared_mem*8e-3
+        return shared_mem*8
 
     def get_eta_simd(self, tiling_config):
         nc = tiling_config.ncells_per_block
@@ -946,22 +974,27 @@ class AutoTiler:
     def get_eta_load_balance(self, tiling_config):
         tiles = tiling_config.operator_tile_descriptions
         nwi = tiling_config.nthreads_per_cell
+        quad_tile_len, = tiling_config.quad_rowtile_lengths
         T_e_r = tiles[0][0]
         T_q_r = tiles[-1][0]
 
-        n1 = floor(self.nquad/T_e_r)
-        n2 = floor(self.n_outDoF/T_q_r)
-        n3 = nwi*ceil(T_e_r/nwi)*sum(n_deriv*n_dof
-                                     for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
-        n4 = nwi*ceil(T_q_r/nwi) * self.n_eval_terms * self.nquad
-        n5 = nwi*ceil((self.nquad % T_e_r)/nwi)*sum(n_deriv*n_dof
-                                                    for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
-        n6 = nwi*ceil((self.n_outDoF % T_q_r)/nwi) * self.n_eval_terms * self.nquad
+        def get_flops_executed_for_nq(nq):
+            n1 = floor(nq/T_e_r)
+            n2 = floor(self.n_outDoF/T_q_r)
+            n3 = nwi*ceil(T_e_r/nwi)*sum(n_deriv*n_dof
+                                         for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
+            n4 = nwi*ceil(T_q_r/nwi) * self.n_eval_terms * nq
+            n5 = nwi*ceil((nq % T_e_r)/nwi)*sum(n_deriv*n_dof
+                                                        for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
+            n6 = nwi*ceil((self.n_outDoF % T_q_r)/nwi) * self.n_eval_terms * nq
+
+            return (n3*n1 + n5 + n4*n2 + n6)
+
+        flops_executed = (floor(self.nquad/quad_tile_len)*get_flops_executed_for_nq(quad_tile_len)
+                          + get_flops_executed_for_nq(self.nquad % quad_tile_len))
 
         useful_flops = (self.nquad * sum(n_deriv*n_dof for n_deriv, n_dof in zip(self.n_trial_derivs, self.n_trialDoFs))
                         + self.n_eval_terms * self.nquad * self.n_outDoF)
-
-        flops_executed = (n3*n1 + n5 + n4*n2 + n6)
 
         eta_load = useful_flops / flops_executed
 
@@ -972,9 +1005,10 @@ class AutoTiler:
         Returns the number of blocks residing on a Streaming Multiprocessor.
         """
         S = self.get_shared_mem_allocated(tiling_config)
-        Smax_per_sm = 96
-        Smax_per_block = 48
-        Wmax = 32
+        dev = cuda.Context.get_device()
+        Smax_per_sm = dev.get_attribute(cuda.device_attribute.MAX_SHARED_MEMORY_PER_MULTIPROCESSOR)
+        Smax_per_block = dev.get_attribute(cuda.device_attribute.MAX_SHARED_MEMORY_PER_BLOCK)
+        Wmax = 16
         blocks_per_sm = min(Smax_per_sm//S if S < Smax_per_block else 0, Wmax)
         return blocks_per_sm
 
@@ -984,7 +1018,7 @@ class AutoTiler:
         """
         blocks_per_sm = self.get_theoretical_blocks_per_sm(tiling_config)
         warps_per_block = ceil(tiling_config.nthreads_per_cell*tiling_config.ncells_per_block/32)
-        warps_per_sm = blocks_per_sm*warps_per_block
+        warps_per_sm = min(blocks_per_sm*warps_per_block, 16)
         return warps_per_sm
 
     def get_effective_warps_per_sm(self, tiling_config):
@@ -1124,13 +1158,53 @@ class AutoTiler:
         Returns a metric proportional to the execution time for a
         configuration.
         """
+        T_e_r = tiling_config.operator_tile_descriptions[0][0]
+        quad_tile_len, = tiling_config.quad_rowtile_lengths
         nwi = tiling_config.nthreads_per_cell
         nwarps = self.get_effective_warps_per_sm(tiling_config)
         nblocks = self.get_effective_blocks_per_sm(tiling_config)
         nsync = self.get_nsync(tiling_config)
+        effective_global_bw = 21 if nwarps > 8 else 20*(nwarps/8)
+        effective_shared_bw = max(1100, 900 + 30*(nwarps-10)) if nwarps > 10 else 900*(nwarps/10)
 
-        if nwarps*nblocks == 0:
-            return float("inf")
+        # gather phase times
+        gather_phase_gbytes = 8e-9*(ceil(self.nquad/T_e_r)*sum(sum(np.prod(dof_shape)
+                                                                   for dof_shape in mv_stage_dof_shapes)
+                                                               for mv_stage_dof_shapes in self.trialDoF_shapes)
+                                    + np.prod(self.coords_shape))
+        gather_phase_time = gather_phase_gbytes/effective_global_bw
+
+        # scatter phase times
+        scatter_phase_gbytes = 8e-9*(np.prod(self.outDoF_shape))*(ceil(self.nquad/quad_tile_len))
+        scatter_phase_time = scatter_phase_gbytes/effective_global_bw
+
+        # reading in the data for quad weights/deriv matrices
+        read_constant_data_into_smem_gbytes = 8e-9*(sum(sum(np.prod(deriv_mat_shape)
+                                                        for deriv_mat_shape in mv_stage_deriv_mat_shapes)
+                                                    for mv_stage_deriv_mat_shapes in self.deriv_mat_shapes)
+                                                + self.nquad)/tiling_config.ncells_per_block
+
+        read_constants_data_into_smem_time = read_constant_data_into_smem_gbytes/effective_global_bw
+
+        # eval phase times
+        eval_phase_smem_read_gbytes = 8e-9*sum(n_trial_deriv*np.prod(mv_stage_deriv_mat_shapes[0])
+                                               for n_trial_deriv, mv_stage_deriv_mat_shapes in zip(self.n_trial_derivs, self.deriv_mat_shapes))
+        eval_phase_smem_read_time = eval_phase_smem_read_gbytes / effective_shared_bw
+
+        # quadr phase times
+        quadr_phase_mat_smem_read_gbytes = 8e-9*(self.n_eval_terms
+                                                 * np.prod(self.deriv_mat_shapes[-1][0]))
+        quadr_phase_rhs_smem_read_gbytes = 8e-9*(self.n_eval_terms
+                                                 * np.prod(self.deriv_mat_shapes[-1][0]))
+        quadr_phase_smem_read_time = (quadr_phase_mat_smem_read_gbytes / effective_shared_bw
+                                      + quadr_phase_rhs_smem_read_gbytes / effective_shared_bw)
+
+        total_time = (gather_phase_time
+                      + scatter_phase_time
+                      + read_constants_data_into_smem_time
+                      + eval_phase_smem_read_time
+                      + quadr_phase_smem_read_time)
+        return (total_time, nsync)
 
         return 4.0/(nwarps) + nsync/nblocks + nwi/8
 
@@ -1162,27 +1236,29 @@ class AutoTiler:
 
         tiles = []
 
-        for i in range(1, ceil(sqrt(self.nquad)+1)):
-            T_e_r = ceil(self.nquad/i)
-            for j in product(*[range(1, ceil(sqrt(ntrialDoF))+1)
-                               for ntrialDoF in self.n_trialDoFs]):
-                T_e_cs = tuple(ceil(ntrialDoF/jj)
-                               for ntrialDoF, jj in zip(self.n_trialDoFs, j))
-                for k in range(1, ceil(sqrt(self.n_outDoF))+1):
-                    T_q_r = ceil(self.n_outDoF/k)
-                    for l in range(1, ceil(sqrt(self.nquad))+1):
-                        T_q_c = ceil(self.nquad/l)
-                        current_tile = tuple((T_e_r, T_e_c) for T_e_c in T_e_cs) + ((T_q_r, T_q_c), )
-                        if get_eta_shared_mem_alias(current_tile) >= 0.8:
-                            tiles.append(current_tile)
+        for nquad_tiles in range(1, 4):
+            quad_tile_len = ceil(self.nquad/nquad_tiles)
+            for i in range(1, ceil(sqrt(quad_tile_len)+1)):
+                T_e_r = ceil(quad_tile_len/i)
+                for j in product(*[range(1, ceil(sqrt(ntrialDoF))+1)
+                                   for ntrialDoF in self.n_trialDoFs]):
+                    T_e_cs = tuple(ceil(ntrialDoF/jj)
+                                   for ntrialDoF, jj in zip(self.n_trialDoFs, j))
+                    for k in range(1, ceil(sqrt(self.n_outDoF))+1):
+                        T_q_r = ceil(self.n_outDoF/k)
+                        for l in range(1, ceil(sqrt(quad_tile_len))+1):
+                            T_q_c = ceil(quad_tile_len/l)
+                            current_tile = tuple((T_e_r, T_e_c) for T_e_c in T_e_cs) + ((T_q_r, T_q_c), )
+                            if get_eta_shared_mem_alias(current_tile) >= 0.8:
+                                tiles.append((quad_tile_len, current_tile))
 
         params = []
 
-        for tile in tiles:
+        for quad_tile_len, tile in tiles:
             for threads in threads_to_cells:
                 for cells in threads_to_cells[threads]:
                     params.append(TilingConfiguration(cells, threads, tile,
-                                  (), False, False, True, True, False, False))
+                                  (quad_tile_len,), False, False, True, True, False, False))
 
         # sort the parameters with highest occupancy.
         params.sort(key=lambda P: self.estimated_exec_time(P))
@@ -1224,7 +1300,9 @@ class AutoTiler:
                                      size=int(np.prod(argshape)*lpy_arg.dtype.itemsize))
 
             print(75*'=')
-            print('Params:', tiling_config.stringify())
+            print('Params:', tiling_config.stringify(),
+                  'Nsync:', self.get_nsync(tiling_config),
+                  'Nwarps:', self.get_effective_warps_per_sm(tiling_config))
 
             kernel, extra_args = tiled_transform(self.fem_program.root_kernel,
                                                  self.fem_program.callables_table,
