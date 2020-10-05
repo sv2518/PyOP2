@@ -1165,12 +1165,16 @@ class AutoTiler:
         nblocks = self.get_effective_blocks_per_sm(tiling_config)
         nsync = self.get_nsync(tiling_config)
         effective_global_bw = 21 if nwarps > 8 else 20*(nwarps/8)
-        effective_shared_bw = max(1100, 900 + 30*(nwarps-10)) if nwarps > 10 else 900*(nwarps/10)
+        effective_shared_bw = min(1100, 900 + 30*(nwarps-10)) if nwarps > 10 else 900*(nwarps/10)
 
         # gather phase times
-        gather_phase_gbytes = 8e-9*(ceil(self.nquad/T_e_r)*sum(sum(np.prod(dof_shape)
-                                                                   for dof_shape in mv_stage_dof_shapes)
-                                                               for mv_stage_dof_shapes in self.trialDoF_shapes)
+        num_times_trial_dofs_gather_per_quad_tile = lambda qt: ceil(qt/T_e_r)
+        num_times_trial_dofs_gathered = (floor(self.nquad/quad_tile_len)*num_times_trial_dofs_gather_per_quad_tile(quad_tile_len)
+                                         + num_times_trial_dofs_gather_per_quad_tile(self.nquad % quad_tile_len))
+
+        gather_phase_gbytes = 8e-9*(num_times_trial_dofs_gathered*sum(sum(np.prod(dof_shape)
+                                                                          for dof_shape in mv_stage_dof_shapes)
+                                                                      for mv_stage_dof_shapes in self.trialDoF_shapes)
                                     + np.prod(self.coords_shape))
         gather_phase_time = gather_phase_gbytes/effective_global_bw
 
@@ -1236,8 +1240,11 @@ class AutoTiler:
 
         tiles = []
 
-        for nquad_tiles in range(1, 4):
+        for nquad_tiles in range(1, 14):
             quad_tile_len = ceil(self.nquad/nquad_tiles)
+            if nquad_tiles > 1 and quad_tile_len == ceil(self.nquad/(nquad_tiles-1)):
+                continue
+
             for i in range(1, ceil(sqrt(quad_tile_len)+1)):
                 T_e_r = ceil(quad_tile_len/i)
                 for j in product(*[range(1, ceil(sqrt(ntrialDoF))+1)
