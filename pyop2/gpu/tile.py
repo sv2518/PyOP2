@@ -487,9 +487,13 @@ def tiled_transform(kernel, callables_table, tiling_config):
     nc = tiling_config.ncells_per_block
     nt = tiling_config.nthreads_per_cell
     mv_tiles = tiling_config.operator_tile_descriptions
+    quad_tiles = tiling_config.quad_rowtile_lengths
 
     if mv_tiles == ():
         mv_tiles = tuple((nquad, nDoF) for nDoF in n_trialDoFs) + ((n_outDoF, nquad),)
+    if quad_tiles == ():
+        quad_tiles = (nquad, )
+    quad_tile, = quad_tiles
 
     assert all(len(tile) == 2 for tile in mv_tiles)
     assert len(mv_tiles) == len(matvec_stage_descrs)  # one for each mv stage
@@ -500,11 +504,7 @@ def tiled_transform(kernel, callables_table, tiling_config):
     T_q_r = mv_tiles[-1][0]
     T_q_c = mv_tiles[-1][1]
 
-    quad_tiles = tiling_config.quad_rowtile_lengths
-    if quad_tiles == ():
-        quad_tiles = (nquad, )
 
-    quad_tile, = quad_tiles
     kernel = lp.split_iname(kernel, iquad, quad_tile, outer_iname='iquad_tile')
     kernel = lp.rename_iname(kernel, iquad+"_inner", iquad)
 
