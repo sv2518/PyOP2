@@ -6,6 +6,7 @@ from pytools import memoize_method
 from pycuda.compiler import SourceModule
 from pyop2.utils import cached_property
 from pytools import ImmutableRecord
+from loopy.diagnostic import LoopyError
 
 
 # {{{ implementing the tiling transformation
@@ -102,7 +103,7 @@ class MatvecStageDescr(ImmutableRecord):
 class KernelMetadata(ImmutableRecord):
     def __init__(self, **kwargs):
         assert isinstance(kwargs["iquad"], str)
-        assert isinstance(kwargs["coords"], str)
+        assert isinstance(kwargs["coords"], (str, type(None)))
         assert isinstance(kwargs["trialDoF_gather_inames"], list)
         assert isinstance(kwargs["outDoF_init_iname"], str)
         assert isinstance(kwargs["quad_weights"], str)
@@ -115,6 +116,10 @@ class KernelMetadata(ImmutableRecord):
     @property
     def outDoF(self):
         return self.matvec_stage_descrs[-1].dof_names[0]
+
+    @property
+    def trialDoFs(self):
+        return [mv_stage.dof_names for mv_stage in self.matvec_stage_descrs[:-1]]
 
     def nquad(self, kernel):
         return int(lp.symbolic.pw_aff_to_expr(kernel.get_iname_bounds(self.iquad, constants_only=True).size))
@@ -134,8 +139,8 @@ class KernelMetadata(ImmutableRecord):
 
 
 def are_mv_stages_similar(mv_stage_x, mv_stage_y):
-    return ((mv_stage_x.deriv_matrices == mv_stage_y.deriv_matrices)
-            and (mv_stage_x.col_iname == mv_stage_x.col_iname))
+    return ((mv_stage_x.deriv_matrices <= mv_stage_y.deriv_matrices)
+             or (mv_stage_x.deriv_matrices >= mv_stage_y.deriv_matrices))
 
 
 def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
@@ -182,7 +187,14 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
         if ('eval' in insn.tags) and (insn.within_inames == frozenset(["n"])):
             coords = coords | (insn.read_dependency_names() & trialDofs_x_outDof_x_coords)
 
-    coords, = coords
+    if len(coords) == 1:
+        # affine mesh
+        coords, = coords
+    elif len(coords) == 0:
+        # non-affine mesh
+        coords = None
+    else:
+        raise ValueError("Inference failure")
 
     # }}}
 
@@ -400,6 +412,12 @@ def inference_which_should_ideally_be_done_by_passing_metadata(kernel):
             return insn.copy(tags=new_tags)
 
         kernel = lp.map_instructions(kernel, ' or '.join("tag:matvec%d" % i for i, _ in to_be_fused_mv_stage), retag_insn)
+
+        for (_, mv_stage) in to_be_fused_mv_stage[1:]:
+            if mv_stage.col_iname != to_be_fused_mv_stage[0][1].col_iname:
+                kernel = lp.rename_iname(kernel, mv_stage.col_iname,
+                        to_be_fused_mv_stage[0][1].col_iname, existing_ok=True)
+
         fused_dof_names = tuple(mv_stg.dof_names[0] for _, mv_stg in to_be_fused_mv_stage)
         new_mv_stage = to_be_fused_mv_stage[0][1].copy(dof_names=fused_dof_names)
         mv_stage_descrs_post_fusion.append(new_mv_stage)
@@ -560,7 +578,11 @@ def tiled_transform(kernel, callables_table, tiling_config):
     kernel = remove_axis(kernel, outDoF, 0)
 
     # enfoce dependency of first matvec stage onto the jacobian evaluation stage
-    kernel = lp.add_dependency(kernel, 'tag:eval_init and tag:matvec0', 'tag:jacobi')
+    try:
+        kernel = lp.add_dependency(kernel, 'tag:eval_init and tag:matvec0', 'tag:jacobi')
+    except LoopyError:
+        # no tag:jacobi found
+        pass
 
     # {{{ prefetch coordinates (not implemented)
 
@@ -577,8 +599,12 @@ def tiled_transform(kernel, callables_table, tiling_config):
     kernel = lp.split_iname(kernel, "irow_eval", T_e_r, outer_iname="irowtile_eval")
 
     # Splitting column in eval stage
-    for i, (T_e_c, gather_iname) in enumerate(zip(T_e_cs, trialDoF_gather_inames)):
-        kernel = lp.rename_iname(kernel, gather_iname, "icol%d" % i, existing_ok=True)
+    for i, (T_e_c, gather_iname, trialDoFs) in enumerate(zip(T_e_cs,
+        trialDoF_gather_inames, metadata.trialDoFs)):
+        # FIXME: Explain...
+        kernel = lp.rename_iname(kernel, gather_iname, "icol%d" % i,
+                existing_ok=True, within=" or ".join(f"writes:{trialDoF}" for
+                    trialDoF in trialDoFs))
         kernel = lp.split_iname(kernel, "icol%d" % i, T_e_c, outer_iname='icoltile%d' % i)
 
     # Splitting row in the quadr stage
@@ -919,6 +945,8 @@ class AutoTiler:
     @cached_property
     def coords_shape(self):
         coords = self.metadata.coords
+        if coords is None:
+            return ()
         return self.fem_program.root_kernel.temporary_variables[coords].shape
 
     @cached_property
