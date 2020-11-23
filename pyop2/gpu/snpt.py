@@ -1,6 +1,21 @@
 import loopy as lp
 
 
+def _make_tv_array_arg(tv):
+    assert tv.address_space != lp.AddressSpace.PRIVATE
+    arg = lp.ArrayArg(name=tv.name,
+                      dtype=tv.dtype,
+                      shape=tv.shape,
+                      dim_tags=tv.dim_tags,
+                      offset=tv.offset,
+                      dim_names=tv.dim_names,
+                      order=tv.order,
+                      alignment=tv.alignment,
+                      address_space=tv.address_space,
+                      is_output_only=not tv.read_only)
+    return arg
+
+
 def snpt_transform(kernel, block_size):
     """
     SNPT := Single 'n' Per Thread.
@@ -17,17 +32,18 @@ def snpt_transform(kernel, block_size):
     # {{{ making consts as globals: necessary to make the strategy emit valid
     # kernels for all forms
 
-    args_to_make_global = []
+    old_temps = kernel.temporary_variables.copy()
     args_to_make_global = [tv.initializer.flatten()
-                           for tv in kernel.temporary_variables.values()
-                           if (tv.initializer is not None and tv.address_space == lp.AddressSpace.GLOBAL)]
+                           for tv in old_temps.values()
+                           if tv.initializer is not None]
 
-    new_temps = dict((tv.name, tv.copy(initializer=None))
-                     if (tv.initializer is not None and tv.address_space == lp.AddressSpace.GLOBAL)
-                     else (tv.name, tv)
-                     for tv in kernel.temporary_variables.values())
-
-    kernel = kernel.copy(temporary_variables=new_temps)
+    new_temps = {tv.name: tv
+                 for tv in old_temps.values()
+                 if tv.initializer is None}
+    kernel = kernel.copy(args=kernel.args+[_make_tv_array_arg(tv)
+                                           for tv in old_temps.values()
+                                           if tv.initializer is not None],
+                         temporary_variables=new_temps)
 
     # }}}
 
