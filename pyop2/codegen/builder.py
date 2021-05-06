@@ -588,7 +588,7 @@ class MixedMatPack(Pack):
 
 class WrapperBuilder(object):
 
-    def __init__(self, *, kernel, iterset, iteration_region=None, single_cell=False,
+    def __init__(self, *, kernel, subset, extruded, constant_layers, iteration_region=None, single_cell=False,
                  pass_layer_to_kernel=False, forward_arg_types=()):
         self.kernel = kernel
         self.arguments = []
@@ -596,7 +596,9 @@ class WrapperBuilder(object):
         self.packed_args = []
         self.indices = []
         self.maps = OrderedDict()
-        self.iterset = iterset
+        self.subset = subset
+        self.extruded = extruded
+        self.constant_layers = constant_layers
         if iteration_region is None:
             self.iteration_region = ALL
         else:
@@ -608,18 +610,6 @@ class WrapperBuilder(object):
     @property
     def requires_zeroed_output_arguments(self):
         return self.kernel.requires_zeroed_output_arguments
-
-    @property
-    def subset(self):
-        return isinstance(self.iterset, Subset)
-
-    @property
-    def extruded(self):
-        return self.iterset._extruded
-
-    @property
-    def constant_layers(self):
-        return self.extruded and self.iterset.constant_layers
 
     @cached_property
     def loop_extents(self):
