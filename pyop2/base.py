@@ -3412,11 +3412,11 @@ class JITModule(Cached):
     _cache = {}
 
     @classmethod
-    def _cache_key(cls, kernel, iterset, *args, **kwargs):
+    def _cache_key(cls, kernel, *args, comm, extruded, constant_layers, subset, **kwargs):
         counter = itertools.count()
         seen = defaultdict(lambda: next(counter))
-        key = ((id(dup_comm(iterset.comm)), ) + kernel._wrapper_cache_key_ + iterset._wrapper_cache_key_
-               + (iterset._extruded, (iterset._extruded and iterset.constant_layers), isinstance(iterset, Subset)))
+        key = ((id(dup_comm(comm)), ) + kernel._wrapper_cache_key_
+               + (extruded, constant_layers, subset))
 
         for arg in args:
             key += arg._wrapper_cache_key_

@@ -489,7 +489,7 @@ def load(jitmodule, extension, fn_name, cppargs=[], ldargs=[],
     dll = compiler.get_so(code, extension)
 
     fn = getattr(dll, fn_name)
-    fn.argtypes = code.argtypes
+    fn.argtypes = argtypes
     fn.restype = restype
     return fn
 

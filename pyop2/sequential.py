@@ -67,7 +67,7 @@ class JITModule(base.JITModule):
     _libraries = []
     _system_headers = []
 
-    def __init__(self, kernel, iterset, *args, **kwargs):
+    def __init__(self, kernel, *args, comm, extruded, constant_layers, subset, iterset_argtypes, **kwargs):
         r"""
         A cached compiled function to execute for a specified par_loop.
 
@@ -86,10 +86,13 @@ class JITModule(base.JITModule):
         # Return early if we were in the cache.
         if self._initialized:
             return
-        self.comm = iterset.comm
         self._kernel = kernel
         self._fun = None
-        self._iterset = iterset
+        self.comm = comm
+        self._extruded = extruded
+        self._constant_layers = constant_layers
+        self._subset = subset
+        self._iterset_argtypes = iterset_argtypes
         self._args = args
         self._iteration_region = kwargs.get('iterate', ALL)
         self._pass_layer_arg = kwargs.get('pass_layer_arg', False)
@@ -115,9 +118,9 @@ class JITModule(base.JITModule):
         from pyop2.codegen.rep2loopy import generate
 
         builder = WrapperBuilder(kernel=self._kernel,
-                                 subset=isinstance(self._iterset, Subset),
-                                 extruded=self._iterset._extruded,
-                                 constant_layers=self._iterset._extruded and self._iterset.constant_layers,
+                                 subset=self._subset,
+                                 extruded=self._extruded,
+                                 constant_layers=self._constant_layers,
                                  iteration_region=self._iteration_region,
                                  pass_layer_to_kernel=self._pass_layer_arg)
         for arg in self._args:
@@ -157,19 +160,19 @@ class JITModule(base.JITModule):
                                      self._wrapper_name,
                                      cppargs=cppargs,
                                      ldargs=ldargs,
+                                     argtypes=self.argtypes,
                                      restype=ctypes.c_int,
                                      compiler=compiler,
                                      comm=self.comm)
         # Blow away everything we don't need any more
         del self._args
         del self._kernel
-        del self._iterset
 
     @cached_property
     def argtypes(self):
         index_type = as_ctypes(IntType)
         argtypes = (index_type, index_type)
-        argtypes += self._iterset._argtypes_
+        argtypes += self._iterset_argtypes
         for arg in self._args:
             argtypes += arg._argtypes_
         seen = set()
@@ -205,7 +208,12 @@ class ParLoop(petsc_base.ParLoop):
 
     @cached_property
     def _jitmodule(self):
-        return JITModule(self.kernel, self.iterset, *self.args,
+        return JITModule(self.kernel, *self.args,
+                         comm=self.comm,
+                         extruded=self.iterset._extruded,
+                         constant_layers=self.iterset._extruded and self.iterset.constant_layers,
+                         subset=isinstance(self.iterset, Subset),
+                         iterset_argtypes=self.iterset._argtypes_,
                          iterate=self.iteration_region,
                          pass_layer_arg=self._pass_layer_arg)
 
