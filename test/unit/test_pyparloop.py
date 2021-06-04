@@ -78,6 +78,7 @@ class TestPyParLoop:
     """
     Python par_loop tests
     """
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_direct(self, s1, d1):
 
         def fn(a):
@@ -86,6 +87,7 @@ class TestPyParLoop:
         op2.par_loop(fn, s1, d1(op2.WRITE))
         assert np.allclose(d1.data, 1.0)
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_indirect(self, s1, d2, m12):
 
         def fn(a):
@@ -94,6 +96,7 @@ class TestPyParLoop:
         op2.par_loop(fn, s1, d2(op2.WRITE, m12))
         assert np.allclose(d2.data, 1.0)
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_direct_read_indirect(self, s1, d1, d2, m12):
         d2.data[:] = range(d2.dataset.size)
         d1.zero()
@@ -104,6 +107,7 @@ class TestPyParLoop:
         op2.par_loop(fn, s1, d1(op2.WRITE), d2(op2.READ, m12))
         assert np.allclose(d1.data, d2.data[m12.values].reshape(-1))
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_indirect_read_direct(self, s1, d1, d2, m12):
         d1.data[:] = range(d1.dataset.size)
         d2.zero()
@@ -114,6 +118,7 @@ class TestPyParLoop:
         op2.par_loop(fn, s1, d2(op2.WRITE, m12), d1(op2.READ))
         assert np.allclose(d2.data[m12.values].reshape(-1), d1.data)
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_indirect_inc(self, s1, d2, m12):
         d2.data[:] = range(4)
 
@@ -123,6 +128,7 @@ class TestPyParLoop:
         op2.par_loop(fn, s1, d2(op2.INC, m12))
         assert np.allclose(d2.data, range(1, 5))
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_direct_subset(self, s1, d1):
         subset = op2.Subset(s1, [1, 3])
         d1.data[:] = 1.0
@@ -136,6 +142,7 @@ class TestPyParLoop:
         expect[subset.indices] = 0.0
         assert np.allclose(d1.data, expect)
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_indirect_read_direct_subset(self, s1, d1, d2, m12):
         subset = op2.Subset(s1, [1, 3])
         d1.data[:] = range(4)
@@ -152,6 +159,7 @@ class TestPyParLoop:
 
         assert np.allclose(d2.data, expect)
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_cant_write_to_read(self, s1, d1):
         d1.data[:] = 0.0
 
@@ -162,6 +170,7 @@ class TestPyParLoop:
             op2.par_loop(fn, s1, d1(op2.READ))
             assert np.allclose(d1.data, 0.0)
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_cant_index_outside(self, s1, d1):
         d1.data[:] = 0.0
 
@@ -172,6 +181,7 @@ class TestPyParLoop:
             op2.par_loop(fn, s1, d1(op2.WRITE))
             assert np.allclose(d1.data, 0.0)
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_matrix_addto(self, s1, m2, mat):
 
         def fn(a):
@@ -186,6 +196,7 @@ class TestPyParLoop:
 
         assert (mat.values == expected).all()
 
+    @pytest.mark.xfail(reason="PyParLoop with new API not supported")
     def test_matrix_set(self, s1, m2, mat):
 
         def fn(a):

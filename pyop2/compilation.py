@@ -236,7 +236,8 @@ class Compiler(object):
         library."""
 
         # Determine cache key
-        hsh = md5(str(jitmodule.cache_key[1:]).encode())
+        # TODO need to include the communicator in the cache key somehow
+        hsh = md5(str(jitmodule.cache_key).encode())
         hsh.update(self._cc.encode())
         if self._ld:
             hsh.update(self._ld.encode())

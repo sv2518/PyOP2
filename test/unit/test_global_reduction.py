@@ -453,12 +453,12 @@ static void k(double* g, double* x)
         g = op2.Global(1, 0, dtype=numpy.uint32)
         k = """void k(unsigned int* g) { *g += 1; }"""
         loop = ParLoop(op2.Kernel(k, "k"),
-                       set,
+                       set.to_arg(),
                        g(op2.INC))
-        loop.compute()
+        loop.compute(set)
         assert_allclose(g.data, set.size)
-        loop.compute()
+        loop.compute(set)
         assert_allclose(g.data, 2*set.size)
         g.zero()
-        loop.compute()
+        loop.compute(set)
         assert_allclose(g.data, set.size)

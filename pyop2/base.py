@@ -362,6 +362,35 @@ class Arg(object):
             self.data._data[:] = self.data._buf[:]
 
 
+class SetArg:
+    def __init__(self, argtypes, kernel_args, *, constant_layers=False, extruded=False, subset=False):
+        self._argtypes = argtypes
+        self._kernel_args = kernel_args
+        self._constant_layers = constant_layers
+        self._extruded = extruded
+        self._subset = subset
+
+    @property
+    def argtypes(self):
+        return self._argtypes
+
+    @property
+    def kernel_args(self):
+        return self._kernel_args
+
+    @property
+    def constant_layers(self):
+        return self._constant_layers
+
+    @property
+    def extruded(self):
+        return self._extruded
+
+    @property
+    def subset(self):
+        return self._subset
+
+
 class Set(object):
 
     """OP2 set.
@@ -425,6 +454,9 @@ class Set(object):
         self._partition_size = 1024
         # A cache of objects built on top of this set
         self._cache = {}
+
+    def to_arg(self):
+        return SetArg(argtypes=self._argtypes_, kernel_args=self._kernel_args_)
 
     @cached_property
     def core_size(self):
@@ -641,6 +673,10 @@ class ExtrudedSet(Set):
         self._layers = layers
         self._extruded = True
 
+    def to_arg(self):
+        return SetArg(self._argtypes_, self._kernel_args_, constant_layers=self.constant_layers,
+                      extruded=True)
+
     @cached_property
     def _kernel_args_(self):
         return (self.layers_array.ctypes.data, )
@@ -721,6 +757,9 @@ class Subset(ExtrudedSet):
                        (self._indices < superset.size).sum(),
                        len(self._indices))
         self._extruded = superset._extruded
+
+    def to_arg(self):
+        return SetArg(self._argtypes_, self._kernel_args_, subset=True)
 
     @cached_property
     def _kernel_args_(self):
@@ -1566,10 +1605,10 @@ class Dat(DataCarrier, _EmptyDataMixin):
                 knl = _make_object('Kernel', knl, 'zero')
                 self._zero_kernels[(self.dtype, self.cdim)] = knl
             loop = _make_object('ParLoop', knl,
-                                iterset,
+                                iterset.to_arg(),
                                 self(WRITE))
             loops[iterset] = loop
-        loop.compute()
+        loop.compute(iterset)
 
     @collective
     def copy(self, other, subset=None):
@@ -1579,7 +1618,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
         :arg subset: A :class:`Subset` of elements to copy (optional)"""
         if other is self:
             return
-        self._copy_parloop(other, subset=subset).compute()
+        self._copy_parloop(other, subset=subset).compute(subset or self.dataset.set)
 
     @collective
     def _copy_parloop(self, other, subset=None):
@@ -1598,8 +1637,12 @@ class Dat(DataCarrier, _EmptyDataMixin):
             knl = loopy.make_function([domain], [insn], data, name="copy", target=loopy.CTarget(), lang_version=(2018, 2))
 
             self._copy_kernel = _make_object('Kernel', knl, 'copy')
+        if subset:
+            iterset_arg = subset.to_arg()
+        else:
+            iterset_arg = self.dataset.set.to_arg()
         return _make_object('ParLoop', self._copy_kernel,
-                            subset or self.dataset.set,
+                            iterset_arg,
                             self(READ), other(WRITE))
 
     def __iter__(self):
@@ -3412,11 +3455,11 @@ class JITModule(Cached):
     _cache = {}
 
     @classmethod
-    def _cache_key(cls, kernel, *args, comm, extruded, constant_layers, subset, **kwargs):
+    def _cache_key(cls, kernel, iterset_arg, *args, **kwargs):
         counter = itertools.count()
         seen = defaultdict(lambda: next(counter))
-        key = ((id(dup_comm(comm)), ) + kernel._wrapper_cache_key_
-               + (extruded, constant_layers, subset))
+        key = (kernel._wrapper_cache_key_
+               + (iterset_arg.extruded, iterset_arg.constant_layers, iterset_arg.subset))
 
         for arg in args:
             key += arg._wrapper_cache_key_
@@ -3464,7 +3507,7 @@ class ParLoop(object):
 
     @validate_type(('kernel', Kernel, KernelTypeError),
                    ('iterset', Set, SetTypeError))
-    def __init__(self, kernel, iterset, *args, **kwargs):
+    def __init__(self, kernel, iterset_arg, *args, **kwargs):
         # INCs into globals need to start with zero and then sum back
         # into the input global at the end.  This has the same number
         # of reductions but means that successive par_loops
@@ -3482,18 +3525,15 @@ class ParLoop(object):
         # Always use the current arguments, also when we hit cache
         self._actual_args = args
         self._kernel = kernel
-        self._is_layered = iterset._extruded
+        self._is_layered = iterset_arg.extruded
         self._iteration_region = kwargs.get("iterate", None)
         self._pass_layer_arg = kwargs.get("pass_layer_arg", False)
-
-        check_iterset(self.args, iterset)
 
         if self._pass_layer_arg:
             if not self._is_layered:
                 raise ValueError("Can't request layer arg for non-extruded iteration")
 
-        self.iterset = iterset
-        self.comm = iterset.comm
+        self._iterset_arg = iterset_arg
 
         for i, arg in enumerate(self._actual_args):
             arg.position = i
@@ -3507,9 +3547,9 @@ class ParLoop(object):
                     if arg2.data is arg1.data and arg2.map is arg1.map:
                         arg2.indirect_position = arg1.indirect_position
 
-        self.arglist = self.prepare_arglist(iterset, *self.args)
+        self.arglist = self.prepare_arglist(iterset_arg, *self.args)
 
-    def prepare_arglist(self, iterset, *args):
+    def prepare_arglist(self, iterset_arg, *args):
         """Prepare the argument list for calling generated code.
 
         :arg iterset: The :class:`Set` iterated over.
@@ -3517,9 +3557,7 @@ class ParLoop(object):
         """
         return ()
 
-    @cached_property
-    def num_flops(self):
-        iterset = self.iterset
+    def num_flops(self, iterset):
         size = 1
         if iterset._extruded:
             region = self.iteration_region
@@ -3546,8 +3584,11 @@ class ParLoop(object):
         return timed_region("ParLoopExecute")
 
     @collective
-    def compute(self):
+    def compute(self, iterset):
         """Executes the kernel over all members of the iteration space."""
+        # TODO: Move as much of this to constructor
+        check_iterset(self.args, iterset)
+
         with self._parloop_event:
             orig_lgmaps = []
             for arg in self.args:
@@ -3569,28 +3610,28 @@ class ParLoop(object):
                             m.handle.setLGMap(*lgmaps)
                         orig_lgmaps.append(olgmaps)
             self.global_to_local_begin()
-            iterset = self.iterset
             arglist = self.arglist
             fun = self._jitmodule
+            fun.compile(iterset.comm)
             # Need to ensure INC globals are zero on entry to the loop
             # in case it's reused.
             for g in self._reduced_globals.keys():
                 g._data[...] = 0
-            self._compute(iterset.core_part, fun, *arglist)
+            self._compute(iterset.core_part, fun, iterset, *arglist)
             self.global_to_local_end()
-            self._compute(iterset.owned_part, fun, *arglist)
-            self.reduction_begin()
+            self._compute(iterset.owned_part, fun, iterset, *arglist)
+            self.reduction_begin(iterset.comm)
             self.local_to_global_begin()
             self.update_arg_data_state()
             for arg in reversed(self.args):
                 if arg._is_mat and arg.lgmaps is not None:
                     for m, lgmaps in zip(arg.data, orig_lgmaps.pop()):
                         m.handle.setLGMap(*lgmaps)
-            self.reduction_end()
+            self.reduction_end(iterset.comm)
             self.local_to_global_end()
 
     @collective
-    def _compute(self, part, fun, *arglist):
+    def _compute(self, part, fun, iterset, *arglist):
         """Executes the kernel over all members of a MPI-part of the iteration space.
 
         :arg part: The :class:`SetPartition` to compute over
@@ -3637,22 +3678,22 @@ class ParLoop(object):
         return len(self.global_reduction_args) > 0
 
     @collective
-    def reduction_begin(self):
+    def reduction_begin(self, comm):
         """Start reductions"""
         if not self._has_reduction:
             return
         with self._reduction_event_begin:
             for arg in self.global_reduction_args:
-                arg.reduction_begin(self.comm)
+                arg.reduction_begin(comm)
 
     @collective
-    def reduction_end(self):
+    def reduction_end(self, comm):
         """End reductions"""
         if not self._has_reduction:
             return
         with self._reduction_event_end:
             for arg in self.global_reduction_args:
-                arg.reduction_end(self.comm)
+                arg.reduction_end(comm)
             # Finalise global increments
             for tmp, glob in self._reduced_globals.items():
                 glob._data += tmp._data
@@ -3816,4 +3857,4 @@ def par_loop(kernel, iterset, *args, **kwargs):
     if isinstance(kernel, types.FunctionType):
         from pyop2 import pyparloop
         return pyparloop.ParLoop(kernel, iterset, *args, **kwargs).compute()
-    return _make_object('ParLoop', kernel, iterset, *args, **kwargs).compute()
+    return _make_object('ParLoop', kernel, iterset.to_arg(), *args, **kwargs).compute(iterset)

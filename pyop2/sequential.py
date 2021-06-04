@@ -67,7 +67,7 @@ class JITModule(base.JITModule):
     _libraries = []
     _system_headers = []
 
-    def __init__(self, kernel, *args, comm, extruded, constant_layers, subset, iterset_argtypes, **kwargs):
+    def __init__(self, kernel, iterset_arg, *args, **kwargs):
         r"""
         A cached compiled function to execute for a specified par_loop.
 
@@ -88,11 +88,7 @@ class JITModule(base.JITModule):
             return
         self._kernel = kernel
         self._fun = None
-        self.comm = comm
-        self._extruded = extruded
-        self._constant_layers = constant_layers
-        self._subset = subset
-        self._iterset_argtypes = iterset_argtypes
+        self._iterset_arg = iterset_arg
         self._args = args
         self._iteration_region = kwargs.get('iterate', ALL)
         self._pass_layer_arg = kwargs.get('pass_layer_arg', False)
@@ -100,9 +96,7 @@ class JITModule(base.JITModule):
         self._cppargs = dcopy(type(self)._cppargs)
         self._libraries = dcopy(type(self)._libraries)
         self._system_headers = dcopy(type(self)._system_headers)
-        if not kwargs.get('delay', False):
-            self.compile()
-            self._initialized = True
+        self._initialized = True
 
     @collective
     def __call__(self, *args):
@@ -118,9 +112,9 @@ class JITModule(base.JITModule):
         from pyop2.codegen.rep2loopy import generate
 
         builder = WrapperBuilder(kernel=self._kernel,
-                                 subset=self._subset,
-                                 extruded=self._extruded,
-                                 constant_layers=self._constant_layers,
+                                 subset=self._iterset_arg.subset,
+                                 extruded=self._iterset_arg.extruded,
+                                 constant_layers=self._iterset_arg.constant_layers,
                                  iteration_region=self._iteration_region,
                                  pass_layer_to_kernel=self._pass_layer_arg)
         for arg in self._args:
@@ -137,11 +131,7 @@ class JITModule(base.JITModule):
         return code.device_code()
 
     @collective
-    def compile(self):
-        # If we weren't in the cache we /must/ have arguments
-        if not hasattr(self, '_args'):
-            raise RuntimeError("JITModule has no args associated with it, should never happen")
-
+    def compile(self, comm):
         from pyop2.configuration import configuration
 
         compiler = configuration["compiler"]
@@ -163,16 +153,13 @@ class JITModule(base.JITModule):
                                      argtypes=self.argtypes,
                                      restype=ctypes.c_int,
                                      compiler=compiler,
-                                     comm=self.comm)
-        # Blow away everything we don't need any more
-        del self._args
-        del self._kernel
+                                     comm=comm)
 
     @cached_property
     def argtypes(self):
         index_type = as_ctypes(IntType)
         argtypes = (index_type, index_type)
-        argtypes += self._iterset_argtypes
+        argtypes += self._iterset_arg.argtypes
         for arg in self._args:
             argtypes += arg._argtypes_
         seen = set()
@@ -189,8 +176,8 @@ class JITModule(base.JITModule):
 
 class ParLoop(petsc_base.ParLoop):
 
-    def prepare_arglist(self, iterset, *args):
-        arglist = iterset._kernel_args_
+    def prepare_arglist(self, iterset_arg, *args):
+        arglist = iterset_arg.kernel_args
         for arg in args:
             arglist += arg._kernel_args_
         seen = set()
@@ -208,23 +195,17 @@ class ParLoop(petsc_base.ParLoop):
 
     @cached_property
     def _jitmodule(self):
-        return JITModule(self.kernel, *self.args,
-                         comm=self.comm,
-                         extruded=self.iterset._extruded,
-                         constant_layers=self.iterset._extruded and self.iterset.constant_layers,
-                         subset=isinstance(self.iterset, Subset),
-                         iterset_argtypes=self.iterset._argtypes_,
+        return JITModule(self.kernel, self._iterset_arg, *self.args,
                          iterate=self.iteration_region,
                          pass_layer_arg=self._pass_layer_arg)
 
-    @cached_property
-    def _compute_event(self):
-        return timed_region("ParLoop_{0}_{1}".format(self.iterset.name, self._jitmodule._wrapper_name))
+    def _compute_event(self, iterset):
+        return timed_region("ParLoop_{0}_{1}".format(iterset.name, self._jitmodule._wrapper_name))
 
     @collective
-    def _compute(self, part, fun, *arglist):
-        with self._compute_event:
-            self.log_flops(part.size * self.num_flops)
+    def _compute(self, part, fun, iterset, *arglist):
+        with self._compute_event(iterset):
+            self.log_flops(part.size * self.num_flops(iterset))
             fun(part.offset, part.offset + part.size, *arglist)
 
 
