@@ -67,7 +67,7 @@ class JITModule(base.JITModule):
     _libraries = []
     _system_headers = []
 
-    def __init__(self, kernel, iterset_arg, *args, **kwargs):
+    def __init__(self, kernel, iterset, *args, **kwargs):
         r"""
         A cached compiled function to execute for a specified par_loop.
 
@@ -92,10 +92,13 @@ class JITModule(base.JITModule):
         self._args = args
         self._iteration_region = kwargs.get('iterate', ALL)
         self._pass_layer_arg = kwargs.get('pass_layer_arg', False)
+        self.comm = iterset.comm
         # Copy the class variables, so we don't overwrite them
         self._cppargs = dcopy(type(self)._cppargs)
         self._libraries = dcopy(type(self)._libraries)
         self._system_headers = dcopy(type(self)._system_headers)
+        if not self._initialized:
+            self.compile()
         self._initialized = True
 
     @collective
@@ -131,7 +134,7 @@ class JITModule(base.JITModule):
         return code.device_code()
 
     @collective
-    def compile(self, comm):
+    def compile(self):
         from pyop2.configuration import configuration
 
         compiler = configuration["compiler"]
@@ -153,7 +156,7 @@ class JITModule(base.JITModule):
                                      argtypes=self.argtypes,
                                      restype=ctypes.c_int,
                                      compiler=compiler,
-                                     comm=comm)
+                                     comm=self.comm)
 
     @cached_property
     def argtypes(self):
@@ -192,12 +195,6 @@ class ParLoop(petsc_base.ParLoop):
                     arglist += (k,)
                     seen.add(k)
         return arglist
-
-    @cached_property
-    def _jitmodule(self):
-        return JITModule(self.kernel, self._iterset_arg, *self.args,
-                         iterate=self.iteration_region,
-                         pass_layer_arg=self._pass_layer_arg)
 
     def _compute_event(self, iterset):
         return timed_region("ParLoop_{0}_{1}".format(iterset.name, self._jitmodule._wrapper_name))

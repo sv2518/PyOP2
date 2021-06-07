@@ -724,7 +724,7 @@ class WrapperBuilder(object):
                     if shape == ():
                         shape = (1,)
                     shape = (None, *shape)
-                    argument = Argument(shape, a.data.dtype, pfx="mdat")
+                    argument = Argument(shape, a.dtype, pfx="mdat")
                     packs.append(a.data.pack(argument, arg.access, self.map_(a.map, unroll=a.unroll_map),
                                              interior_horizontal=interior_horizontal,
                                              init_with_zero=self.requires_zeroed_output_arguments))
@@ -744,7 +744,7 @@ class WrapperBuilder(object):
                     shape = (1,)
                 shape = (None, *shape)
                 argument = Argument(shape,
-                                    arg.data.dtype,
+                                    arg.dtype,
                                     pfx="dat")
                 pack = arg.data.pack(argument, arg.access, self.map_(arg.map, unroll=arg.unroll_map),
                                      interior_horizontal=interior_horizontal,
@@ -755,7 +755,7 @@ class WrapperBuilder(object):
                 self.argument_accesses.append(arg.access)
         elif arg._is_global:
             argument = Argument(arg.data.dim,
-                                arg.data.dtype,
+                                arg.dtype,
                                 pfx="glob")
             pack = GlobalPack(argument, arg.access,
                               init_with_zero=self.requires_zeroed_output_arguments)

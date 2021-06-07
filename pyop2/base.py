@@ -118,7 +118,7 @@ class Arg(object):
         Instead, use the call syntax on the :class:`DataCarrier`.
     """
 
-    def __init__(self, data=None, map=None, access=None, lgmaps=None, unroll_map=False):
+    def __init__(self, kernel_args, argtypes, dtype, map=None, access=None, lgmaps=None, unroll_map=False):
         """
         :param data: A data-carrying object, either :class:`Dat` or class:`Mat`
         :param map:  A :class:`Map` to access this :class:`Arg` or the default
@@ -134,7 +134,9 @@ class Arg(object):
            defined on.
 
         A :class:`MapValueError` is raised if these conditions are not met."""
-        self.data = data
+        self._kernel_args = kernel_args
+        self._argtypes = argtypes
+        self._dtype = dtype
         self._map = map
         if map is None:
             self.map_tuple = ()
@@ -143,9 +145,8 @@ class Arg(object):
         else:
             self.map_tuple = tuple(map)
 
-        if data is not None and hasattr(data, "dtype"):
-            if data.dtype.kind == "c" and (access == MIN or access == MAX):
-                raise ValueError("MIN and MAX access descriptors are undefined on complex data.")
+        if dtype.kind == "c" and (access == MIN or access == MAX):
+            raise ValueError("MIN and MAX access descriptors are undefined on complex data.")
         self._access = access
 
         self.unroll_map = unroll_map
@@ -171,11 +172,11 @@ class Arg(object):
 
     @cached_property
     def _kernel_args_(self):
-        return self.data._kernel_args_
+        return self._kernel_args
 
     @cached_property
     def _argtypes_(self):
-        return self.data._argtypes_
+        return self._argtypes
 
     @cached_property
     def _wrapper_cache_key_(self):
@@ -241,7 +242,7 @@ class Arg(object):
     @cached_property
     def dtype(self):
         """Numpy datatype of this Arg"""
-        return self.data.dtype
+        return self._dtype
 
     @cached_property
     def map(self):
@@ -253,45 +254,45 @@ class Arg(object):
         """Access descriptor. One of the constants of type :class:`Access`"""
         return self._access
 
-    @cached_property
-    def _is_dat_view(self):
-        return isinstance(self.data, DatView)
+    # @cached_property
+    # def _is_dat_view(self):
+    #     return isinstance(self.data, DatView)
 
-    @cached_property
-    def _is_mat(self):
-        return isinstance(self.data, Mat)
+    # @cached_property
+    # def _is_mat(self):
+    #     return isinstance(self.data, Mat)
 
-    @cached_property
-    def _is_mixed_mat(self):
-        return self._is_mat and self.data.sparsity.shape > (1, 1)
+    # @cached_property
+    # def _is_mixed_mat(self):
+    #     return self._is_mat and self.data.sparsity.shape > (1, 1)
 
-    @cached_property
-    def _is_global(self):
-        return isinstance(self.data, Global)
+    # @cached_property
+    # def _is_global(self):
+    #     return isinstance(self.data, Global)
 
-    @cached_property
-    def _is_global_reduction(self):
-        return self._is_global and self._access in [INC, MIN, MAX]
+    # @cached_property
+    # def _is_global_reduction(self):
+    #     return self._is_global and self._access in [INC, MIN, MAX]
 
-    @cached_property
-    def _is_dat(self):
-        return isinstance(self.data, Dat)
+    # @cached_property
+    # def _is_dat(self):
+    #     return isinstance(self.data, Dat)
 
-    @cached_property
-    def _is_mixed_dat(self):
-        return isinstance(self.data, MixedDat)
+    # @cached_property
+    # def _is_mixed_dat(self):
+    #     return isinstance(self.data, MixedDat)
 
-    @cached_property
-    def _is_mixed(self):
-        return self._is_mixed_dat or self._is_mixed_mat
+    # @cached_property
+    # def _is_mixed(self):
+    #     return self._is_mixed_dat or self._is_mixed_mat
 
-    @cached_property
-    def _is_direct(self):
-        return isinstance(self.data, Dat) and self.map is None
+    # @cached_property
+    # def _is_direct(self):
+    #     return isinstance(self.data, Dat) and self.map is None
 
-    @cached_property
-    def _is_indirect(self):
-        return isinstance(self.data, Dat) and self.map is not None
+    # @cached_property
+    # def _is_indirect(self):
+    #     return isinstance(self.data, Dat) and self.map is not None
 
     @collective
     def global_to_local_begin(self):
@@ -332,10 +333,10 @@ class Arg(object):
             self.data.local_to_global_end(self.access)
 
     @collective
-    def reduction_begin(self, comm):
+    def reduction_begin(self, glob):
         """Begin reduction for the argument if its access is INC, MIN, or MAX.
         Doing a reduction only makes sense for :class:`Global` objects."""
-        assert self._is_global, \
+        assert isinstance(glob, Global), \
             "Doing global reduction only makes sense for Globals"
         if self.access is not READ:
             if self.access is INC:
@@ -3584,20 +3585,29 @@ class ParLoop(object):
         return timed_region("ParLoopExecute")
 
     @collective
-    def compute(self, iterset):
+    def compute(self, iterset, *data_objs):
         """Executes the kernel over all members of the iteration space."""
         # TODO: Move as much of this to constructor
         check_iterset(self.args, iterset)
 
+        seen = {}
+        for arg, data_obj in zip(self.args, data_objs):
+            if data_obj not in seen:
+                seen[data_obj] = arg
+            else:
+                if arg.access != seen[data_obj].access:
+                    raise ValueError("Same Dat appears multiple times with different "
+                                     "access descriptors")
+
         with self._parloop_event:
             orig_lgmaps = []
-            for arg in self.args:
+            for arg, data_obj in zip(self.args, data_objs):
                 if arg._is_mat:
                     new_state = {INC: Mat.ADD_VALUES,
                                  WRITE: Mat.INSERT_VALUES}[arg.access]
-                    for m in arg.data:
+                    for m in data_obj:
                         m.change_assembly_state(new_state)
-                    arg.data.change_assembly_state(new_state)
+                    data_objs.change_assembly_state(new_state)
                     # Boundary conditions applied to the matrix appear
                     # as modified lgmaps on the Arg. We set them onto
                     # the matrix so things are correctly dropped in
@@ -3605,30 +3615,35 @@ class ParLoop(object):
                     # afterwards.
                     if arg.lgmaps is not None:
                         olgmaps = []
-                        for m, lgmaps in zip(arg.data, arg.lgmaps):
+                        for m, lgmaps in zip(data_objs, arg.lgmaps):
                             olgmaps.append(m.handle.getLGMap())
                             m.handle.setLGMap(*lgmaps)
                         orig_lgmaps.append(olgmaps)
-            self.global_to_local_begin()
+
+            self.global_to_local_begin(data_objs)
             arglist = self.arglist
-            fun = self._jitmodule
-            fun.compile(iterset.comm)
+            # The compilation process should occur here since it is not a part
+            # of the code generation (a compiled parloop is not composable).
+            fun = JITModule(self.kernel, iterset, *self.args,
+                            iterate=self.iteration_region,
+                            pass_layer_arg=self._pass_layer_arg)
             # Need to ensure INC globals are zero on entry to the loop
             # in case it's reused.
             for g in self._reduced_globals.keys():
                 g._data[...] = 0
+
             self._compute(iterset.core_part, fun, iterset, *arglist)
-            self.global_to_local_end()
+            self.global_to_local_end(data_objs)
             self._compute(iterset.owned_part, fun, iterset, *arglist)
             self.reduction_begin(iterset.comm)
-            self.local_to_global_begin()
-            self.update_arg_data_state()
+            self.local_to_global_begin(data_objs)
+            self.update_arg_data_state(data_objs)
             for arg in reversed(self.args):
                 if arg._is_mat and arg.lgmaps is not None:
                     for m, lgmaps in zip(arg.data, orig_lgmaps.pop()):
                         m.handle.setLGMap(*lgmaps)
             self.reduction_end(iterset.comm)
-            self.local_to_global_end()
+            self.local_to_global_end(data_objs)
 
     @collective
     def _compute(self, part, fun, iterset, *arglist):
@@ -3642,28 +3657,28 @@ class ParLoop(object):
         raise RuntimeError("Must select a backend")
 
     @collective
-    def global_to_local_begin(self):
+    def global_to_local_begin(self, data_objs):
         """Start halo exchanges."""
-        for arg in self.unique_dat_args:
-            arg.global_to_local_begin()
+        for dat in self.extract_unique_dats(data_objs):
+            dat.global_to_local_begin()
 
     @collective
-    def global_to_local_end(self):
+    def global_to_local_end(self, data_objs):
         """Finish halo exchanges"""
-        for arg in self.unique_dat_args:
-            arg.global_to_local_end()
+        for dat in self.extract_unique_dats(data_objs):
+            dat.global_to_local_end()
 
     @collective
-    def local_to_global_begin(self):
+    def local_to_global_begin(self, data_objs):
         """Start halo exchanges."""
-        for arg in self.unique_dat_args:
-            arg.local_to_global_begin()
+        for dat in self.extract_unique_dats(data_objs):
+            dat.local_to_global_begin()
 
     @collective
-    def local_to_global_end(self):
+    def local_to_global_end(self, data_objs):
         """Finish halo exchanges (wait on irecvs)"""
-        for arg in self.unique_dat_args:
-            arg.local_to_global_end()
+        for dat in self.extract_unique_dats(data_objs):
+            dat.local_to_global_end()
 
     @cached_property
     def _reduction_event_begin(self):
@@ -3687,53 +3702,45 @@ class ParLoop(object):
                 arg.reduction_begin(comm)
 
     @collective
-    def reduction_end(self, comm):
+    def reduction_end(self, comm, data_objs):
         """End reductions"""
         if not self._has_reduction:
             return
         with self._reduction_event_end:
-            for arg in self.global_reduction_args:
+            for arg in self.extract_global_reductions(data_objs):
                 arg.reduction_end(comm)
             # Finalise global increments
             for tmp, glob in self._reduced_globals.items():
                 glob._data += tmp._data
 
     @collective
-    def update_arg_data_state(self):
+    def update_arg_data_state(self, data_objs):
         r"""Update the state of the :class:`DataCarrier`\s in the arguments to the `par_loop`.
 
         This marks :class:`Mat`\s that need assembly."""
-        for arg in self.args:
+        for arg, data_obj in zip(self.args, data_objs):
             access = arg.access
             if access is READ:
                 continue
             if arg._is_dat:
-                arg.data.halo_valid = False
+                data_obj.halo_valid = False
             if arg._is_mat:
                 state = {WRITE: Mat.INSERT_VALUES,
                          INC: Mat.ADD_VALUES}[access]
-                arg.data.assembly_state = state
+                data_obj.assembly_state = state
 
-    @cached_property
-    def dat_args(self):
-        return tuple(arg for arg in self.args if arg._is_dat)
+    def extract_dats(self, data_objs):
+        return tuple(dat for dat in data_objs if isinstance(dat, Dat))
 
-    @cached_property
-    def unique_dat_args(self):
-        seen = {}
-        unique = []
-        for arg in self.dat_args:
-            if arg.data not in seen:
-                unique.append(arg)
-                seen[arg.data] = arg
-            elif arg.access != seen[arg.data].access:
-                raise ValueError("Same Dat appears multiple times with different "
-                                 "access descriptors")
-        return tuple(unique)
+    def extract_unique_dats(self, data_objs):
+        return tuple(set(self.extract_dats(data_objs)))
 
-    @cached_property
-    def global_reduction_args(self):
-        return tuple(arg for arg in self.args if arg._is_global_reduction)
+    def extract_global_reductions(self, data_objs):
+        global_reductions = []
+        for arg, data_obj in zip(self.args, data_objs):
+            if isinstance(data_obj, Global) and arg.access in {INC, MIN, MAX}:
+                global_reductions.append(data_obj)
+        return tuple(global_reductions)
 
     @cached_property
     def kernel(self):
