@@ -151,7 +151,8 @@ class Arg(object):
 
         self.unroll_map = unroll_map
         self.lgmaps = None
-        if self._is_mat and lgmaps is not None:
+        # if self._is_mat and lgmaps is not None:
+        if lgmaps is not None:
             self.lgmaps = as_tuple(lgmaps)
             assert len(self.lgmaps) == self.data.nblocks
         else:
@@ -159,16 +160,16 @@ class Arg(object):
                 raise ValueError("Local to global maps only for matrices")
 
         # Check arguments for consistency
-        if configuration["type_check"] and not (self._is_global or map is None):
-            for j, m in enumerate(map):
-                if m.iterset.total_size > 0 and len(m.values_with_halo) == 0:
-                    raise MapValueError("%s is not initialized." % map)
-                if self._is_mat and m.toset != data.sparsity.dsets[j].set:
-                    raise MapValueError(
-                        "To set of %s doesn't match the set of %s." % (map, data))
-            if self._is_dat and map.toset != data.dataset.set:
-                raise MapValueError(
-                    "To set of %s doesn't match the set of %s." % (map, data))
+        # if configuration["type_check"] and not (self._is_global or map is None):
+        #     for j, m in enumerate(map):
+        #         if m.iterset.total_size > 0 and len(m.values_with_halo) == 0:
+        #             raise MapValueError("%s is not initialized." % map)
+        #         if self._is_mat and m.toset != data.sparsity.dsets[j].set:
+        #             raise MapValueError(
+        #                 "To set of %s doesn't match the set of %s." % (map, data))
+        #     if self._is_dat and map.toset != data.dataset.set:
+        #         raise MapValueError(
+        #             "To set of %s doesn't match the set of %s." % (map, data))
 
     @cached_property
     def _kernel_args_(self):
@@ -215,21 +216,6 @@ class Arg(object):
             yield arg
 
     @cached_property
-    def split(self):
-        """Split a mixed argument into a tuple of constituent arguments."""
-        if self._is_mixed_dat:
-            return tuple(_make_object('Arg', d, m, self._access)
-                         for d, m in zip(self.data, self._map))
-        elif self._is_mixed_mat:
-            rows, cols = self.data.sparsity.shape
-            mr, mc = self.map
-            return tuple(_make_object('Arg', self.data[i, j], (mr.split[i], mc.split[j]),
-                                      self._access)
-                         for i in range(rows) for j in range(cols))
-        else:
-            return (self,)
-
-    @cached_property
     def name(self):
         """The generated argument name."""
         return "arg%d" % self.position
@@ -262,6 +248,22 @@ class RuntimeArg:
     def __init__(self, arg, data):
         self.arg = arg
         self.data = data
+
+    @cached_property
+    def split(self):
+        """Split a mixed argument into a tuple of constituent arguments."""
+        if self._is_mixed_dat:
+            return tuple(_make_object('Arg', d, m, self._access)
+                         for d, m in zip(self.data, self._map))
+        elif self._is_mixed_mat:
+            rows, cols = self.data.sparsity.shape
+            mr, mc = self.map
+            return tuple(_make_object('Arg', self.data[i, j], (mr.split[i], mc.split[j]),
+                                      self._access)
+                         for i in range(rows) for j in range(cols))
+        else:
+            return (self,)
+
 
     @cached_property
     def _is_dat_view(self):
@@ -1435,7 +1437,12 @@ class Dat(DataCarrier, _EmptyDataMixin):
     def __call__(self, access, path=None):
         if configuration["type_check"] and path and path.toset != self.dataset.set:
             raise MapValueError("To Set of Map does not match Set of Dat.")
-        return _make_object('Arg', data=self, map=path, access=access)
+        return _make_object('Arg',
+                            kernel_args=self._kernel_args_,
+                            argtypes=self._argtypes_,
+                            dtype=self.dtype,
+                            map=path,
+                            access=access)
 
     def __getitem__(self, idx):
         """Return self if ``idx`` is 0, raise an error otherwise."""
@@ -2356,7 +2363,12 @@ class Global(DataCarrier, _EmptyDataMixin):
 
     @validate_in(('access', _modes, ModeValueError))
     def __call__(self, access, path=None):
-        return _make_object('Arg', data=self, access=access)
+        return _make_object('Arg',
+                            kernel_args=self._kernel_args_,
+                            argtypes=self._argtypes_,
+                            dtype=self.dtype,
+                            map=path,
+                            access=access)
 
     def __iter__(self):
         """Yield self when iterated over."""
@@ -3179,7 +3191,14 @@ class Mat(DataCarrier):
         path_maps = as_tuple(path, Map, 2)
         if configuration["type_check"] and tuple(path_maps) not in self.sparsity:
             raise MapValueError("Path maps not in sparsity maps")
-        return _make_object('Arg', data=self, map=path_maps, access=access, lgmaps=lgmaps, unroll_map=unroll_map)
+        return _make_object('Arg',
+                            kernel_args=self._kernel_args_,
+                            argtypes=self._argtypes_,
+                            dtype=self.dtype,
+                            map=path_maps,
+                            access=access,
+                            lgmaps=lgmaps,
+                            unroll_map=unroll_map)
 
     @cached_property
     def _wrapper_cache_key_(self):
