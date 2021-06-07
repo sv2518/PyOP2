@@ -88,7 +88,7 @@ class JITModule(base.JITModule):
             return
         self._kernel = kernel
         self._fun = None
-        self._iterset_arg = iterset_arg
+        self._iterset = iterset
         self._args = args
         self._iteration_region = kwargs.get('iterate', ALL)
         self._pass_layer_arg = kwargs.get('pass_layer_arg', False)
@@ -115,9 +115,9 @@ class JITModule(base.JITModule):
         from pyop2.codegen.rep2loopy import generate
 
         builder = WrapperBuilder(kernel=self._kernel,
-                                 subset=self._iterset_arg.subset,
-                                 extruded=self._iterset_arg.extruded,
-                                 constant_layers=self._iterset_arg.constant_layers,
+                                 subset=isinstance(self._iterset, Subset),
+                                 extruded=isinstance(self._iterset, ExtrudedSet),
+                                 constant_layers=isinstance(self._iterset, ExtrudedSet) and self.iterset.constant_layers,
                                  iteration_region=self._iteration_region,
                                  pass_layer_to_kernel=self._pass_layer_arg)
         for arg in self._args:
@@ -162,7 +162,7 @@ class JITModule(base.JITModule):
     def argtypes(self):
         index_type = as_ctypes(IntType)
         argtypes = (index_type, index_type)
-        argtypes += self._iterset_arg.argtypes
+        argtypes += self._iterset._argtypes_
         for arg in self._args:
             argtypes += arg._argtypes_
         seen = set()
@@ -196,12 +196,12 @@ class ParLoop(petsc_base.ParLoop):
                     seen.add(k)
         return arglist
 
-    def _compute_event(self, iterset):
-        return timed_region("ParLoop_{0}_{1}".format(iterset.name, self._jitmodule._wrapper_name))
+    def _compute_event(self, fun, iterset):
+        return timed_region("ParLoop_{0}_{1}".format(iterset.name, fun._wrapper_name))
 
     @collective
     def _compute(self, part, fun, iterset, *arglist):
-        with self._compute_event(iterset):
+        with self._compute_event(fun, iterset):
             self.log_flops(part.size * self.num_flops(iterset))
             fun(part.offset, part.offset + part.size, *arglist)
 

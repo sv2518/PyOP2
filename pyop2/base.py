@@ -118,7 +118,7 @@ class Arg(object):
         Instead, use the call syntax on the :class:`DataCarrier`.
     """
 
-    def __init__(self, data_class, kernel_args, argtypes, dtype, map=None, access=None, lgmaps=None, unroll_map=False, is_mixed_mat=False):
+    def __init__(self, data_class, kernel_args, argtypes, dtype, shape, map=None, access=None, lgmaps=None, unroll_map=False, is_mixed_mat=False):
         """
         :param data: A data-carrying object, either :class:`Dat` or class:`Mat`
         :param map:  A :class:`Map` to access this :class:`Arg` or the default
@@ -138,6 +138,7 @@ class Arg(object):
         self._kernel_args = kernel_args
         self._argtypes = argtypes
         self._dtype = dtype
+        self.shape = shape
         self._map = map
         self._is_mixed_mat = is_mixed_mat
         if map is None:
@@ -162,16 +163,25 @@ class Arg(object):
                 raise ValueError("Local to global maps only for matrices")
 
         # Check arguments for consistency
-        if configuration["type_check"] and not (self._is_global or map is None):
-            for j, m in enumerate(map):
-                if m.iterset.total_size > 0 and len(m.values_with_halo) == 0:
-                    raise MapValueError("%s is not initialized." % map)
-                if self._is_mat and m.toset != data.sparsity.dsets[j].set:
-                    raise MapValueError(
-                        "To set of %s doesn't match the set of %s." % (map, data))
-            if self._is_dat and map.toset != data.dataset.set:
-                raise MapValueError(
-                    "To set of %s doesn't match the set of %s." % (map, data))
+        # if configuration["type_check"] and not (self._is_global or map is None):
+        #     for j, m in enumerate(map):
+        #         if m.iterset.total_size > 0 and len(m.values_with_halo) == 0:
+        #             raise MapValueError("%s is not initialized." % map)
+        #         if self._is_mat and m.toset != data.sparsity.dsets[j].set:
+        #             raise MapValueError(
+        #                 "To set of %s doesn't match the set of %s." % (map, data))
+        #     if self._is_dat and map.toset != data.dataset.set:
+        #         raise MapValueError(
+        #             "To set of %s doesn't match the set of %s." % (map, data))
+
+    def pack(self, *args, **kwargs):
+        from pyop2.codegen.builder import DatPack, MatPack
+        if self._is_dat:
+            return DatPack(*args, **kwargs)
+        elif self._is_mat:
+            return MatPack(*args, **kwargs)
+        else:
+            raise AssertionError
 
     @cached_property
     def _kernel_args_(self):
@@ -187,11 +197,12 @@ class Arg(object):
             map_ = tuple(None if m is None else m._wrapper_cache_key_ for m in self.map)
         else:
             map_ = self.map
-        return (type(self), self.access, self.data._wrapper_cache_key_, map_, self.unroll_map)
+        # return (type(self), self.access, self.data._wrapper_cache_key_, map_, self.unroll_map)
+        return (type(self), self.access, self.data_class, map_, self.unroll_map)
 
     @property
     def _key(self):
-        return (self.data, self._map, self._access)
+        return (self.data_class, self._map, self._access)
 
     def __eq__(self, other):
         r""":class:`Arg`\s compare equal of they are defined on the same data,
@@ -207,11 +218,11 @@ class Arg(object):
 
     def __str__(self):
         return "OP2 Arg: dat %s, map %s, access %s" % \
-            (self.data, self._map, self._access)
+            (self.data_class, self._map, self._access)
 
     def __repr__(self):
         return "Arg(%r, %r, %r)" % \
-            (self.data, self._map, self._access)
+            (self.data_class, self._map, self._access)
 
     def __iter__(self):
         for arg in self.split:
@@ -244,15 +255,15 @@ class Arg(object):
 
     @cached_property
     def _is_dat_view(self):
-        return self.data_class is DatView
+        return issubclass(self.data_class, DatView)
 
     @cached_property
     def _is_mat(self):
-        return self.data_class is Mat
+        return issubclass(self.data_class, Mat)
 
     @cached_property
     def _is_global(self):
-        return self.data_class is Global
+        return issubclass(self.data_class, Global)
 
     @cached_property
     def _is_global_reduction(self):
@@ -260,11 +271,11 @@ class Arg(object):
 
     @cached_property
     def _is_dat(self):
-        return self.data_class is Dat
+        return issubclass(self.data_class, Dat)
 
     @cached_property
     def _is_mixed_dat(self):
-        return self.data_class is MixedDat
+        return issubclass(self.data_class, MixedDat)
 
     @cached_property
     def _is_mixed(self):
@@ -272,11 +283,11 @@ class Arg(object):
 
     @cached_property
     def _is_direct(self):
-        return self.data_class is Dat and self.map is None
+        return issubclass(self.data_class, Dat) and self.map is None
 
     @cached_property
     def _is_indirect(self):
-        return self.data_class is Dat and self.map is not None
+        return issubclass(self.data_class, Dat) and self.map is not None
 
 
 class RuntimeArg:
@@ -1391,11 +1402,6 @@ class Dat(DataCarrier, _EmptyDataMixin):
 
     _modes = [READ, WRITE, RW, INC, MIN, MAX]
 
-    @cached_property
-    def pack(self):
-        from pyop2.codegen.builder import DatPack
-        return DatPack
-
     @validate_type(('dataset', (DataCarrier, DataSet, Set), DataSetTypeError),
                    ('name', str, NameTypeError))
     @validate_dtype(('dtype', None, DataTypeError))
@@ -1439,6 +1445,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
                             kernel_args=self._kernel_args_,
                             argtypes=self._argtypes_,
                             dtype=self.dtype,
+                            shape=self.shape,
                             map=path,
                             access=access)
 
@@ -1981,6 +1988,18 @@ class DatView(Dat):
                                       name="view[%s](%s)" % (index, dat.name))
         self._parent = dat
 
+    def __call__(self, access, path=None):
+        if configuration["type_check"] and path and path.toset != self.dataset.set:
+            raise MapValueError("To Set of Map does not match Set of Dat.")
+        return _make_object('Arg',
+                            data_class=self.__class__,
+                            kernel_args=self._kernel_args_,
+                            argtypes=self._argtypes_,
+                            dtype=self.dtype,
+                            shape=self._parent.shape,
+                            map=path,
+                            access=access)
+
     @cached_property
     def _kernel_args_(self):
         return self._parent._kernel_args_
@@ -2366,6 +2385,7 @@ class Global(DataCarrier, _EmptyDataMixin):
                             kernel_args=self._kernel_args_,
                             argtypes=self._argtypes_,
                             dtype=self.dtype,
+                            shape=self.shape,
                             map=path,
                             access=access)
 
@@ -3162,11 +3182,6 @@ class Mat(DataCarrier):
        before using it (for example to view its values), you must call
        :meth:`assemble` to finalise the writes.
     """
-    @cached_property
-    def pack(self):
-        from pyop2.codegen.builder import MatPack
-        return MatPack
-
     ASSEMBLED = "ASSEMBLED"
     INSERT_VALUES = "INSERT_VALUES"
     ADD_VALUES = "ADD_VALUES"
@@ -3195,6 +3210,7 @@ class Mat(DataCarrier):
                             kernel_args=self._kernel_args_,
                             argtypes=self._argtypes_,
                             dtype=self.dtype,
+                            shape=self.sparsity.shape,
                             map=path_maps,
                             access=access,
                             lgmaps=lgmaps,
@@ -3489,11 +3505,13 @@ class JITModule(Cached):
     _cache = {}
 
     @classmethod
-    def _cache_key(cls, kernel, iterset_arg, *args, **kwargs):
+    def _cache_key(cls, kernel, iterset, *args, **kwargs):
         counter = itertools.count()
         seen = defaultdict(lambda: next(counter))
         key = (kernel._wrapper_cache_key_
-               + (iterset_arg.extruded, iterset_arg.constant_layers, iterset_arg.subset))
+               + (isinstance(iterset, ExtrudedSet),
+                  isinstance(iterset, ExtrudedSet) and iterset.constant_layers,
+                  isinstance(iterset, Subset)))
 
         for arg in args:
             key += arg._wrapper_cache_key_
@@ -3569,17 +3587,19 @@ class ParLoop(object):
 
         self._iterset_arg = iterset_arg
 
-        for i, arg in enumerate(self._actual_args):
-            arg.position = i
-            arg.indirect_position = i
-        for i, arg1 in enumerate(self._actual_args):
-            if arg1._is_dat and arg1._is_indirect:
-                for arg2 in self._actual_args[i:]:
-                    # We have to check for identity here (we really
-                    # want these to be the same thing, not just look
-                    # the same)
-                    if arg2.data is arg1.data and arg2.map is arg1.map:
-                        arg2.indirect_position = arg1.indirect_position
+        # We don't use this anywhere so can be removed. Also makes it complain
+        # since we have arg.data
+        # for i, arg in enumerate(self._actual_args):
+        #     arg.position = i
+        #     arg.indirect_position = i
+        # for i, arg1 in enumerate(self._actual_args):
+        #     if arg1._is_dat and arg1._is_indirect:
+        #         for arg2 in self._actual_args[i:]:
+        #             # We have to check for identity here (we really
+        #             # want these to be the same thing, not just look
+        #             # the same)
+        #             if arg2.data is arg1.data and arg2.map is arg1.map:
+        #                 arg2.indirect_position = arg1.indirect_position
 
         self.arglist = self.prepare_arglist(iterset_arg, *self.args)
 
@@ -3663,9 +3683,10 @@ class ParLoop(object):
             arglist = self.arglist
             # The compilation process should occur here since it is not a part
             # of the code generation (a compiled parloop is not composable).
-            fun = JITModule(self.kernel, iterset, *self.args,
-                            iterate=self.iteration_region,
-                            pass_layer_arg=self._pass_layer_arg)
+            fun = _make_object("JITModule",
+                               self.kernel, iterset, *self.args,
+                               iterate=self.iteration_region,
+                               pass_layer_arg=self._pass_layer_arg)
             # Need to ensure INC globals are zero on entry to the loop
             # in case it's reused.
             for g in self._reduced_globals.keys():

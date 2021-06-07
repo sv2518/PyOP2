@@ -720,12 +720,12 @@ class WrapperBuilder(object):
             if arg._is_mixed:
                 packs = []
                 for a in arg:
-                    shape = a.data.shape[1:]
+                    shape = a.shape[1:]
                     if shape == ():
                         shape = (1,)
                     shape = (None, *shape)
                     argument = Argument(shape, a.dtype, pfx="mdat")
-                    packs.append(a.data.pack(argument, arg.access, self.map_(a.map, unroll=a.unroll_map),
+                    packs.append(a.pack(argument, arg.access, self.map_(a.map, unroll=a.unroll_map),
                                              interior_horizontal=interior_horizontal,
                                              init_with_zero=self.requires_zeroed_output_arguments))
                     self.arguments.append(argument)
@@ -735,18 +735,16 @@ class WrapperBuilder(object):
             else:
                 if arg._is_dat_view:
                     view_index = arg.data.index
-                    data = arg.data._parent
                 else:
                     view_index = None
-                    data = arg.data
-                shape = data.shape[1:]
+                shape = arg.shape[1:] # need shape
                 if shape == ():
                     shape = (1,)
                 shape = (None, *shape)
                 argument = Argument(shape,
                                     arg.dtype,
                                     pfx="dat")
-                pack = arg.data.pack(argument, arg.access, self.map_(arg.map, unroll=arg.unroll_map),
+                pack = arg.pack(argument, arg.access, self.map_(arg.map, unroll=arg.unroll_map),
                                      interior_horizontal=interior_horizontal,
                                      view_index=view_index,
                                      init_with_zero=self.requires_zeroed_output_arguments)
@@ -754,7 +752,7 @@ class WrapperBuilder(object):
                 self.packed_args.append(pack)
                 self.argument_accesses.append(arg.access)
         elif arg._is_global:
-            argument = Argument(arg.data.dim,
+            argument = Argument(arg.dim,
                                 arg.dtype,
                                 pfx="glob")
             pack = GlobalPack(argument, arg.access,
@@ -768,19 +766,19 @@ class WrapperBuilder(object):
                 for a in arg:
                     argument = Argument((), PetscMat(), pfx="mat")
                     map_ = tuple(self.map_(m, unroll=arg.unroll_map) for m in a.map)
-                    packs.append(arg.data.pack(argument, a.access, map_,
-                                               a.data.dims, a.data.dtype,
+                    packs.append(arg.pack(argument, a.access, map_,
+                                               a.dim, a.dtype,
                                                interior_horizontal=interior_horizontal))
                     self.arguments.append(argument)
                 pack = MixedMatPack(packs, arg.access, arg.dtype,
-                                    arg.data.sparsity.shape)
+                                    arg.shape)
                 self.packed_args.append(pack)
                 self.argument_accesses.append(arg.access)
             else:
                 argument = Argument((), PetscMat(), pfx="mat")
                 map_ = tuple(self.map_(m, unroll=arg.unroll_map) for m in arg.map)
                 pack = arg.data.pack(argument, arg.access, map_,
-                                     arg.data.dims, arg.data.dtype,
+                                     arg.dim, arg.dtype,
                                      interior_horizontal=interior_horizontal)
                 self.arguments.append(argument)
                 self.packed_args.append(pack)
