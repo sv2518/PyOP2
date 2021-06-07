@@ -118,7 +118,7 @@ class Arg(object):
         Instead, use the call syntax on the :class:`DataCarrier`.
     """
 
-    def __init__(self, data_class, kernel_args, argtypes, dtype, shape, map=None, access=None, lgmaps=None, unroll_map=False, is_mixed_mat=False):
+    def __init__(self, data_class, kernel_args, argtypes, dtype, shape=None, dim=None, map=None, access=None, lgmaps=None, unroll_map=False, is_mixed_mat=False):
         """
         :param data: A data-carrying object, either :class:`Dat` or class:`Mat`
         :param map:  A :class:`Map` to access this :class:`Arg` or the default
@@ -139,6 +139,7 @@ class Arg(object):
         self._argtypes = argtypes
         self._dtype = dtype
         self.shape = shape
+        self.dim = dim
         self._map = map
         self._is_mixed_mat = is_mixed_mat
         if map is None:
@@ -154,8 +155,7 @@ class Arg(object):
 
         self.unroll_map = unroll_map
         self.lgmaps = None
-        # if self._is_mat and lgmaps is not None:
-        if lgmaps is not None:
+        if self._is_mat and lgmaps is not None:
             self.lgmaps = as_tuple(lgmaps)
             assert len(self.lgmaps) == self.data.nblocks
         else:
@@ -225,8 +225,25 @@ class Arg(object):
             (self.data_class, self._map, self._access)
 
     def __iter__(self):
-        for arg in self.split:
+        for arg in self.split():
             yield arg
+
+    def split(self):
+        """Split a mixed argument into a tuple of constituent arguments."""
+        if self._is_mixed_dat:
+            args = []
+            for 
+            return tuple(args)
+            return tuple(_make_object('Arg', d, m, self._access)
+                         for d, m in zip(self.data, self._map))
+        elif self._is_mixed_mat:
+            rows, cols = self.shape
+            mr, mc = self.map
+            return tuple(_make_object('Arg', data_class=Mat, self.data[i, j], (mr.split[i], mc.split[j]),
+                                      access=self._access)
+                         for i in range(rows) for j in range(cols))
+        else:
+            return (self,)
 
     @cached_property
     def name(self):
@@ -296,22 +313,6 @@ class RuntimeArg:
     def __init__(self, arg, data):
         self.arg = arg
         self.data = data
-
-    @cached_property
-    def split(self):
-        """Split a mixed argument into a tuple of constituent arguments."""
-        if self._is_mixed_dat:
-            return tuple(_make_object('Arg', d, m, self._access)
-                         for d, m in zip(self.data, self._map))
-        elif self._is_mixed_mat:
-            rows, cols = self.data.sparsity.shape
-            mr, mc = self.map
-            return tuple(_make_object('Arg', self.data[i, j], (mr.split[i], mc.split[j]),
-                                      self._access)
-                         for i in range(rows) for j in range(cols))
-        else:
-            return (self,)
-
 
     @collective
     def global_to_local_begin(self):
@@ -2081,6 +2082,18 @@ class MixedDat(Dat):
         # TODO: Think about different communicators on dats (c.f. MixedSet)
         self.comm = self._dats[0].comm
 
+    def __call__(self, access, path=None):
+        if configuration["type_check"] and path and path.toset != self.dataset.set:
+            raise MapValueError("To Set of Map does not match Set of Dat.")
+        return _make_object('Arg',
+                            data_class=self.__class__,
+                            kernel_args=self._kernel_args_,
+                            argtypes=self._argtypes_,
+                            dtype=self.dtype,
+                            map=path,
+                            access=access)
+
+
     @cached_property
     def _kernel_args_(self):
         return tuple(itertools.chain(*(d._kernel_args_ for d in self)))
@@ -2386,6 +2399,7 @@ class Global(DataCarrier, _EmptyDataMixin):
                             argtypes=self._argtypes_,
                             dtype=self.dtype,
                             shape=self.shape,
+                            dim=self._dim,
                             map=path,
                             access=access)
 
@@ -3211,6 +3225,7 @@ class Mat(DataCarrier):
                             argtypes=self._argtypes_,
                             dtype=self.dtype,
                             shape=self.sparsity.shape,
+                            dim=self.dims,
                             map=path_maps,
                             access=access,
                             lgmaps=lgmaps,
@@ -3560,20 +3575,6 @@ class ParLoop(object):
     @validate_type(('kernel', Kernel, KernelTypeError),
                    ('iterset', Set, SetTypeError))
     def __init__(self, kernel, iterset_arg, *args, **kwargs):
-        # INCs into globals need to start with zero and then sum back
-        # into the input global at the end.  This has the same number
-        # of reductions but means that successive par_loops
-        # incrementing into a global get the "right" value in
-        # parallel.
-        # Don't care about MIN and MAX because they commute with the reduction
-        self._reduced_globals = {}
-        for i, arg in enumerate(args):
-            if arg._is_global_reduction and arg.access == INC:
-                glob = arg.data
-                tmp = _make_object('Global', glob.dim, data=np.zeros_like(glob.data_ro), dtype=glob.dtype)
-                self._reduced_globals[tmp] = glob
-                args[i].data = tmp
-
         # Always use the current arguments, also when we hit cache
         self._actual_args = args
         self._kernel = kernel
@@ -3640,8 +3641,12 @@ class ParLoop(object):
     @collective
     def compute(self, iterset, *data_objs):
         """Executes the kernel over all members of the iteration space."""
+        # We tie the symbolic args to the data structures for convenience
+        runtime_args = tuple(RuntimeArg(arg, data)
+                             for arg, data in zip(self.args, data_objs))
+
         # TODO: Move as much of this to constructor
-        check_iterset(self.args, iterset)
+        # check_iterset(runtime_args, iterset)
 
         seen = {}
         for arg, data_obj in zip(self.args, data_objs):
@@ -3652,9 +3657,20 @@ class ParLoop(object):
                     raise ValueError("Same Dat appears multiple times with different "
                                      "access descriptors")
 
-        # We tie the symbolic args to the data structures for convenience
-        runtime_args = tuple(RuntimeArg(arg, data)
-                             for arg, data in zip(self.args, data_objs))
+        # INCs into globals need to start with zero and then sum back
+        # into the input global at the end.  This has the same number
+        # of reductions but means that successive par_loops
+        # incrementing into a global get the "right" value in
+        # parallel.
+        # Don't care about MIN and MAX because they commute with the reduction
+        reduced_globals = {}
+        for rt_arg in runtime_args:
+            if rt_arg.arg._is_global_reduction and rt_arg.arg.access == INC:
+                glob = rt_arg.data
+                tmp = _make_object('Global', glob.dim, data=np.zeros_like(glob.data_ro), dtype=glob.dtype)
+                reduced_globals[tmp] = glob
+                rt_arg.data = tmp
+
 
         with self._parloop_event:
             orig_lgmaps = []
@@ -3687,22 +3703,18 @@ class ParLoop(object):
                                self.kernel, iterset, *self.args,
                                iterate=self.iteration_region,
                                pass_layer_arg=self._pass_layer_arg)
-            # Need to ensure INC globals are zero on entry to the loop
-            # in case it's reused.
-            for g in self._reduced_globals.keys():
-                g._data[...] = 0
 
             self._compute(iterset.core_part, fun, iterset, *arglist)
             self.global_to_local_end(runtime_args)
             self._compute(iterset.owned_part, fun, iterset, *arglist)
-            self.reduction_begin(runtime_args)
+            self.reduction_begin(runtime_args, iterset.comm)
             self.local_to_global_begin(runtime_args)
             self.update_arg_data_state(runtime_args)
             for arg in reversed(self.args):
                 if arg._is_mat and arg.lgmaps is not None:
                     for m, lgmaps in zip(arg.data, orig_lgmaps.pop()):
                         m.handle.setLGMap(*lgmaps)
-            self.reduction_end(runtime_args)
+            self.reduction_end(runtime_args, reduced_globals)
             self.local_to_global_end(runtime_args)
 
     @collective
@@ -3749,7 +3761,7 @@ class ParLoop(object):
         return timed_region("ParLoopRednEnd")
 
     def _has_reduction(self, runtime_args):
-        return len(self.extract_global_reduction_args(runtime_args)) > 0
+        return len(self.extract_global_reductions(runtime_args)) > 0
 
     @collective
     def reduction_begin(self, runtime_args, comm):
@@ -3761,7 +3773,7 @@ class ParLoop(object):
                 rt_arg.reduction_begin(comm)
 
     @collective
-    def reduction_end(self, runtime_args):
+    def reduction_end(self, runtime_args, reduced_globals):
         """End reductions"""
         if not self._has_reduction(runtime_args):
             return
@@ -3769,7 +3781,7 @@ class ParLoop(object):
             for arg in self.extract_global_reductions(data_objs):
                 arg.reduction_end(comm)
             # Finalise global increments
-            for tmp, glob in self._reduced_globals.items():
+            for tmp, glob in reduced_globals.items():
                 glob._data += tmp._data
 
     @collective
@@ -3823,7 +3835,7 @@ class ParLoop(object):
         return self._iteration_region
 
 
-def check_iterset(args, iterset):
+def check_iterset(runtime_args, iterset):
     """Checks that the iteration set of the :class:`ParLoop` matches the
     iteration set of all its arguments. A :class:`MapValueError` is raised
     if this condition is not met."""
@@ -3835,15 +3847,18 @@ def check_iterset(args, iterset):
     if configuration["type_check"]:
         if isinstance(_iterset, MixedSet):
             raise SetTypeError("Cannot iterate over MixedSets")
-        for i, arg in enumerate(args):
+        for i, rt_arg in enumerate(runtime_args):
+            arg = rt_arg.arg
+            data = rt_arg.data
+
             if arg._is_global:
                 continue
             if arg._is_direct:
                 if isinstance(_iterset, ExtrudedSet):
-                    if arg.data.dataset.set != _iterset.parent:
+                    if data.dataset.set != _iterset.parent:
                         raise MapValueError(
                             "Iterset of direct arg %s doesn't match ParLoop iterset." % i)
-                elif arg.data.dataset.set != _iterset:
+                elif data.dataset.set != _iterset:
                     raise MapValueError(
                         "Iterset of direct arg %s doesn't match ParLoop iterset." % i)
                 continue

@@ -715,6 +715,7 @@ class WrapperBuilder(object):
             return (self.loop_index, None, self._loop_index)
 
     def add_argument(self, arg):
+        # import pdb; pdb.set_trace()
         interior_horizontal = self.iteration_region == ON_INTERIOR_FACETS
         if arg._is_dat:
             if arg._is_mixed:
@@ -737,7 +738,7 @@ class WrapperBuilder(object):
                     view_index = arg.data.index
                 else:
                     view_index = None
-                shape = arg.shape[1:] # need shape
+                shape = arg.shape[1:]
                 if shape == ():
                     shape = (1,)
                 shape = (None, *shape)

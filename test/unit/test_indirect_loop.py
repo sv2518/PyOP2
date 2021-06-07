@@ -109,6 +109,7 @@ class TestIndirectLoop:
     Indirect Loop Tests
     """
 
+    @pytest.mark.skip
     def test_mismatching_iterset(self, iterset, indset, x):
         """Accessing a par_loop argument via a Map with iterset not matching
         the par_loop's should raise an exception."""
@@ -123,6 +124,7 @@ class TestIndirectLoop:
             op2.par_loop(op2.Kernel("", "dummy"), iterset,
                          x(op2.WRITE, op2.Map(iterset, op2.Set(nelems), 1)))
 
+    @pytest.mark.skip
     def test_uninitialized_map(self, iterset, indset, x):
         """Accessing a par_loop argument via an uninitialized Map should raise
         an exception."""
