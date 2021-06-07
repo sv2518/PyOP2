@@ -259,10 +259,9 @@ class Arg(object):
 class RuntimeArg:
     """Class connecting the symbolic Arg and DataCarrier at runtime."""
 
-    def __init__(self, arg, data, comm):
+    def __init__(self, arg, data):
         self.arg = arg
         self.data = data
-        self.comm = comm
 
     @cached_property
     def _is_dat_view(self):
@@ -343,7 +342,7 @@ class RuntimeArg:
             self.data.local_to_global_end(self.arg.access)
 
     @collective
-    def reduction_begin(self):
+    def reduction_begin(self, comm):
         """Begin reduction for the argument if its access is INC, MIN, or MAX.
         Doing a reduction only makes sense for :class:`Global` objects."""
         assert isinstance(self.data, Global), \
@@ -356,7 +355,7 @@ class RuntimeArg:
             elif self.arg.access is MAX:
                 op = MPI.MAX
             if MPI.VERSION >= 3:
-                self._reduction_req = self.comm.Iallreduce(self.data._data, self.data._buf, op=op)
+                self._reduction_req = comm.Iallreduce(self.data._data, self.data._buf, op=op)
             else:
                 comm.Allreduce(self.data._data, self.data._buf, op=op)
 
@@ -3610,7 +3609,7 @@ class ParLoop(object):
                                      "access descriptors")
 
         # We tie the symbolic args to the data structures for convenience
-        runtime_args = tuple(RuntimeArg(arg, data, iterset.comm)
+        runtime_args = tuple(RuntimeArg(arg, data)
                              for arg, data in zip(self.args, data_objs))
 
         with self._parloop_event:
@@ -3634,7 +3633,7 @@ class ParLoop(object):
                             m.handle.setLGMap(*lgmaps)
                         orig_lgmaps.append(olgmaps)
 
-            self.global_to_local_begin(runtime_args) # here...
+            self.global_to_local_begin(runtime_args)
             arglist = self.arglist
             # The compilation process should occur here since it is not a part
             # of the code generation (a compiled parloop is not composable).
@@ -3647,17 +3646,17 @@ class ParLoop(object):
                 g._data[...] = 0
 
             self._compute(iterset.core_part, fun, iterset, *arglist)
-            self.global_to_local_end(data_objs)
+            self.global_to_local_end(runtime_args)
             self._compute(iterset.owned_part, fun, iterset, *arglist)
-            self.reduction_begin(iterset.comm)
-            self.local_to_global_begin(data_objs)
-            self.update_arg_data_state(data_objs)
+            self.reduction_begin(runtime_args)
+            self.local_to_global_begin(runtime_args)
+            self.update_arg_data_state(runtime_args)
             for arg in reversed(self.args):
                 if arg._is_mat and arg.lgmaps is not None:
                     for m, lgmaps in zip(arg.data, orig_lgmaps.pop()):
                         m.handle.setLGMap(*lgmaps)
-            self.reduction_end(iterset.comm)
-            self.local_to_global_end(data_objs)
+            self.reduction_end(runtime_args)
+            self.local_to_global_end(runtime_args)
 
     @collective
     def _compute(self, part, fun, iterset, *arglist):
@@ -3671,27 +3670,27 @@ class ParLoop(object):
         raise RuntimeError("Must select a backend")
 
     @collective
-    def global_to_local_begin(self, data_objs):
+    def global_to_local_begin(self, runtime_args):
         """Start halo exchanges."""
-        for dat in self.extract_unique_dats(data_objs):
+        for dat in self.extract_unique_dats(runtime_args):
             dat.global_to_local_begin()
 
     @collective
-    def global_to_local_end(self, data_objs):
+    def global_to_local_end(self, runtime_args):
         """Finish halo exchanges"""
-        for dat in self.extract_unique_dats(data_objs):
+        for dat in self.extract_unique_dats(runtime_args):
             dat.global_to_local_end()
 
     @collective
-    def local_to_global_begin(self, data_objs):
+    def local_to_global_begin(self, runtime_args):
         """Start halo exchanges."""
-        for dat in self.extract_unique_dats(data_objs):
+        for dat in self.extract_unique_dats(runtime_args):
             dat.local_to_global_begin()
 
     @collective
-    def local_to_global_end(self, data_objs):
+    def local_to_global_end(self, runtime_args):
         """Finish halo exchanges (wait on irecvs)"""
-        for dat in self.extract_unique_dats(data_objs):
+        for dat in self.extract_unique_dats(runtime_args):
             dat.local_to_global_end()
 
     @cached_property
@@ -3702,23 +3701,22 @@ class ParLoop(object):
     def _reduction_event_end(self):
         return timed_region("ParLoopRednEnd")
 
-    @cached_property
-    def _has_reduction(self):
-        return len(self.global_reduction_args) > 0
+    def _has_reduction(self, runtime_args):
+        return len(self.extract_global_reduction_args(runtime_args)) > 0
 
     @collective
-    def reduction_begin(self, comm):
+    def reduction_begin(self, runtime_args, comm):
         """Start reductions"""
-        if not self._has_reduction:
+        if not self._has_reduction(runtime_args):
             return
         with self._reduction_event_begin:
-            for arg in self.global_reduction_args:
-                arg.reduction_begin(comm)
+            for rt_arg in self.extract_global_reduction_args(runtime_args):
+                rt_arg.reduction_begin(comm)
 
     @collective
-    def reduction_end(self, comm, data_objs):
+    def reduction_end(self, runtime_args):
         """End reductions"""
-        if not self._has_reduction:
+        if not self._has_reduction(runtime_args):
             return
         with self._reduction_event_end:
             for arg in self.extract_global_reductions(data_objs):
@@ -3728,33 +3726,31 @@ class ParLoop(object):
                 glob._data += tmp._data
 
     @collective
-    def update_arg_data_state(self, data_objs):
+    def update_arg_data_state(self, runtime_args):
         r"""Update the state of the :class:`DataCarrier`\s in the arguments to the `par_loop`.
 
         This marks :class:`Mat`\s that need assembly."""
-        for arg, data_obj in zip(self.args, data_objs):
-            access = arg.access
+        for rt_arg in runtime_args:
+            access = rt_arg.arg.access
             if access is READ:
                 continue
-            if arg._is_dat:
+            if rt_arg._is_dat:
                 data_obj.halo_valid = False
-            if arg._is_mat:
+            if rt_arg._is_mat:
                 state = {WRITE: Mat.INSERT_VALUES,
                          INC: Mat.ADD_VALUES}[access]
-                data_obj.assembly_state = state
+                rt_arg.data.assembly_state = state
 
-    def extract_dats(self, data_objs):
-        return tuple(dat for dat in data_objs if isinstance(dat, Dat))
+    def extract_dats(self, runtime_args):
+        return tuple(rt_arg.data for rt_arg in runtime_args if isinstance(rt_arg.data, Dat))
 
-    def extract_unique_dats(self, data_objs):
-        return tuple(set(self.extract_dats(data_objs)))
+    def extract_unique_dats(self, runtime_args):
+        return tuple(set(self.extract_dats(runtime_args)))
 
-    def extract_global_reductions(self, data_objs):
-        global_reductions = []
-        for arg, data_obj in zip(self.args, data_objs):
-            if isinstance(data_obj, Global) and arg.access in {INC, MIN, MAX}:
-                global_reductions.append(data_obj)
-        return tuple(global_reductions)
+    def extract_global_reductions(self, runtime_args):
+        return tuple(rt_arg.data for rt_arg in runtime_args
+                     if isinstance(rt_arg.data, Global)
+                     and rt_arg.arg.access in {INC, MIN, MAX})
 
     @cached_property
     def kernel(self):
