@@ -254,45 +254,55 @@ class Arg(object):
         """Access descriptor. One of the constants of type :class:`Access`"""
         return self._access
 
-    # @cached_property
-    # def _is_dat_view(self):
-    #     return isinstance(self.data, DatView)
 
-    # @cached_property
-    # def _is_mat(self):
-    #     return isinstance(self.data, Mat)
 
-    # @cached_property
-    # def _is_mixed_mat(self):
-    #     return self._is_mat and self.data.sparsity.shape > (1, 1)
+class RuntimeArg:
+    """Class connecting the symbolic Arg and DataCarrier at runtime."""
 
-    # @cached_property
-    # def _is_global(self):
-    #     return isinstance(self.data, Global)
+    def __init__(self, arg, data, comm):
+        self.arg = arg
+        self.data = data
+        self.comm = comm
 
-    # @cached_property
-    # def _is_global_reduction(self):
-    #     return self._is_global and self._access in [INC, MIN, MAX]
+    @cached_property
+    def _is_dat_view(self):
+        return isinstance(self.data, DatView)
 
-    # @cached_property
-    # def _is_dat(self):
-    #     return isinstance(self.data, Dat)
+    @cached_property
+    def _is_mat(self):
+        return isinstance(self.data, Mat)
 
-    # @cached_property
-    # def _is_mixed_dat(self):
-    #     return isinstance(self.data, MixedDat)
+    @cached_property
+    def _is_mixed_mat(self):
+        return self._is_mat and self.data.sparsity.shape > (1, 1)
 
-    # @cached_property
-    # def _is_mixed(self):
-    #     return self._is_mixed_dat or self._is_mixed_mat
+    @cached_property
+    def _is_global(self):
+        return isinstance(self.data, Global)
 
-    # @cached_property
-    # def _is_direct(self):
-    #     return isinstance(self.data, Dat) and self.map is None
+    @cached_property
+    def _is_global_reduction(self):
+        return self._is_global and self.arg.access in [INC, MIN, MAX]
 
-    # @cached_property
-    # def _is_indirect(self):
-    #     return isinstance(self.data, Dat) and self.map is not None
+    @cached_property
+    def _is_dat(self):
+        return isinstance(self.data, Dat)
+
+    @cached_property
+    def _is_mixed_dat(self):
+        return isinstance(self.data, MixedDat)
+
+    @cached_property
+    def _is_mixed(self):
+        return self._is_mixed_dat or self._is_mixed_mat
+
+    @cached_property
+    def _is_direct(self):
+        return isinstance(self.data, Dat) and self.arg.map is None
+
+    @cached_property
+    def _is_indirect(self):
+        return isinstance(self.data, Dat) and self.arg.map is not None
 
     @collective
     def global_to_local_begin(self):
@@ -302,8 +312,8 @@ class Arg(object):
         assert self._is_dat, "Doing halo exchanges only makes sense for Dats"
         if self._is_direct:
             return
-        if self.access is not WRITE:
-            self.data.global_to_local_begin(self.access)
+        if self.arg.access is not WRITE:
+            self.data.global_to_local_begin(self.arg.access)
 
     @collective
     def global_to_local_end(self):
@@ -313,50 +323,50 @@ class Arg(object):
         assert self._is_dat, "Doing halo exchanges only makes sense for Dats"
         if self._is_direct:
             return
-        if self.access is not WRITE:
-            self.data.global_to_local_end(self.access)
+        if self.arg.access is not WRITE:
+            self.data.global_to_local_end(self.arg.access)
 
     @collective
     def local_to_global_begin(self):
         assert self._is_dat, "Doing halo exchanges only makes sense for Dats"
         if self._is_direct:
             return
-        if self.access in {INC, MIN, MAX}:
-            self.data.local_to_global_begin(self.access)
+        if self.arg.access in {INC, MIN, MAX}:
+            self.data.local_to_global_begin(self.arg.access)
 
     @collective
     def local_to_global_end(self):
         assert self._is_dat, "Doing halo exchanges only makes sense for Dats"
         if self._is_direct:
             return
-        if self.access in {INC, MIN, MAX}:
-            self.data.local_to_global_end(self.access)
+        if self.arg.access in {INC, MIN, MAX}:
+            self.data.local_to_global_end(self.arg.access)
 
     @collective
-    def reduction_begin(self, glob):
+    def reduction_begin(self):
         """Begin reduction for the argument if its access is INC, MIN, or MAX.
         Doing a reduction only makes sense for :class:`Global` objects."""
-        assert isinstance(glob, Global), \
+        assert isinstance(self.data, Global), \
             "Doing global reduction only makes sense for Globals"
-        if self.access is not READ:
-            if self.access is INC:
+        if self.arg.access is not READ:
+            if self.arg.access is INC:
                 op = MPI.SUM
-            elif self.access is MIN:
+            elif self.arg.access is MIN:
                 op = MPI.MIN
-            elif self.access is MAX:
+            elif self.arg.access is MAX:
                 op = MPI.MAX
             if MPI.VERSION >= 3:
-                self._reduction_req = comm.Iallreduce(self.data._data, self.data._buf, op=op)
+                self._reduction_req = self.comm.Iallreduce(self.data._data, self.data._buf, op=op)
             else:
                 comm.Allreduce(self.data._data, self.data._buf, op=op)
 
     @collective
-    def reduction_end(self, comm):
+    def reduction_end(self):
         """End reduction for the argument if it is in flight.
         Doing a reduction only makes sense for :class:`Global` objects."""
         assert self._is_global, \
             "Doing global reduction only makes sense for Globals"
-        if self.access is not READ:
+        if self.arg.access is not READ:
             if MPI.VERSION >= 3:
                 self._reduction_req.Wait()
                 self._reduction_req = None
@@ -3599,28 +3609,32 @@ class ParLoop(object):
                     raise ValueError("Same Dat appears multiple times with different "
                                      "access descriptors")
 
+        # We tie the symbolic args to the data structures for convenience
+        runtime_args = tuple(RuntimeArg(arg, data, iterset.comm)
+                             for arg, data in zip(self.args, data_objs))
+
         with self._parloop_event:
             orig_lgmaps = []
-            for arg, data_obj in zip(self.args, data_objs):
-                if arg._is_mat:
+            for rt_arg in runtime_args:
+                if rt_arg._is_mat:
                     new_state = {INC: Mat.ADD_VALUES,
                                  WRITE: Mat.INSERT_VALUES}[arg.access]
-                    for m in data_obj:
+                    for m in rt_arg.data:
                         m.change_assembly_state(new_state)
-                    data_objs.change_assembly_state(new_state)
+                    rt_arg.data.change_assembly_state(new_state)
                     # Boundary conditions applied to the matrix appear
                     # as modified lgmaps on the Arg. We set them onto
                     # the matrix so things are correctly dropped in
                     # insertion, and then restore the original lgmaps
                     # afterwards.
-                    if arg.lgmaps is not None:
+                    if rt_arg.arg.lgmaps is not None:
                         olgmaps = []
-                        for m, lgmaps in zip(data_objs, arg.lgmaps):
+                        for m, lgmaps in zip(rt_arg.data, rt_arg.arg.lgmaps):
                             olgmaps.append(m.handle.getLGMap())
                             m.handle.setLGMap(*lgmaps)
                         orig_lgmaps.append(olgmaps)
 
-            self.global_to_local_begin(data_objs)
+            self.global_to_local_begin(runtime_args) # here...
             arglist = self.arglist
             # The compilation process should occur here since it is not a part
             # of the code generation (a compiled parloop is not composable).
