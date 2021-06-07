@@ -118,7 +118,7 @@ class Arg(object):
         Instead, use the call syntax on the :class:`DataCarrier`.
     """
 
-    def __init__(self, kernel_args, argtypes, dtype, map=None, access=None, lgmaps=None, unroll_map=False):
+    def __init__(self, data_class, kernel_args, argtypes, dtype, map=None, access=None, lgmaps=None, unroll_map=False, is_mixed_mat=False):
         """
         :param data: A data-carrying object, either :class:`Dat` or class:`Mat`
         :param map:  A :class:`Map` to access this :class:`Arg` or the default
@@ -134,10 +134,12 @@ class Arg(object):
            defined on.
 
         A :class:`MapValueError` is raised if these conditions are not met."""
+        self.data_class = data_class
         self._kernel_args = kernel_args
         self._argtypes = argtypes
         self._dtype = dtype
         self._map = map
+        self._is_mixed_mat = is_mixed_mat
         if map is None:
             self.map_tuple = ()
         elif isinstance(map, Map):
@@ -160,16 +162,16 @@ class Arg(object):
                 raise ValueError("Local to global maps only for matrices")
 
         # Check arguments for consistency
-        # if configuration["type_check"] and not (self._is_global or map is None):
-        #     for j, m in enumerate(map):
-        #         if m.iterset.total_size > 0 and len(m.values_with_halo) == 0:
-        #             raise MapValueError("%s is not initialized." % map)
-        #         if self._is_mat and m.toset != data.sparsity.dsets[j].set:
-        #             raise MapValueError(
-        #                 "To set of %s doesn't match the set of %s." % (map, data))
-        #     if self._is_dat and map.toset != data.dataset.set:
-        #         raise MapValueError(
-        #             "To set of %s doesn't match the set of %s." % (map, data))
+        if configuration["type_check"] and not (self._is_global or map is None):
+            for j, m in enumerate(map):
+                if m.iterset.total_size > 0 and len(m.values_with_halo) == 0:
+                    raise MapValueError("%s is not initialized." % map)
+                if self._is_mat and m.toset != data.sparsity.dsets[j].set:
+                    raise MapValueError(
+                        "To set of %s doesn't match the set of %s." % (map, data))
+            if self._is_dat and map.toset != data.dataset.set:
+                raise MapValueError(
+                    "To set of %s doesn't match the set of %s." % (map, data))
 
     @cached_property
     def _kernel_args_(self):
@@ -240,6 +242,41 @@ class Arg(object):
         """Access descriptor. One of the constants of type :class:`Access`"""
         return self._access
 
+    @cached_property
+    def _is_dat_view(self):
+        return self.data_class is DatView
+
+    @cached_property
+    def _is_mat(self):
+        return self.data_class is Mat
+
+    @cached_property
+    def _is_global(self):
+        return self.data_class is Global
+
+    @cached_property
+    def _is_global_reduction(self):
+        return self._is_global and self._access in {INC, MIN, MAX}
+
+    @cached_property
+    def _is_dat(self):
+        return self.data_class is Dat
+
+    @cached_property
+    def _is_mixed_dat(self):
+        return self.data_class is MixedDat
+
+    @cached_property
+    def _is_mixed(self):
+        return self._is_mixed_dat or self._is_mixed_mat
+
+    @cached_property
+    def _is_direct(self):
+        return self.data_class is Dat and self.map is None
+
+    @cached_property
+    def _is_indirect(self):
+        return self.data_class is Dat and self.map is not None
 
 
 class RuntimeArg:
@@ -264,46 +301,6 @@ class RuntimeArg:
         else:
             return (self,)
 
-
-    @cached_property
-    def _is_dat_view(self):
-        return isinstance(self.data, DatView)
-
-    @cached_property
-    def _is_mat(self):
-        return isinstance(self.data, Mat)
-
-    @cached_property
-    def _is_mixed_mat(self):
-        return self._is_mat and self.data.sparsity.shape > (1, 1)
-
-    @cached_property
-    def _is_global(self):
-        return isinstance(self.data, Global)
-
-    @cached_property
-    def _is_global_reduction(self):
-        return self._is_global and self.arg.access in [INC, MIN, MAX]
-
-    @cached_property
-    def _is_dat(self):
-        return isinstance(self.data, Dat)
-
-    @cached_property
-    def _is_mixed_dat(self):
-        return isinstance(self.data, MixedDat)
-
-    @cached_property
-    def _is_mixed(self):
-        return self._is_mixed_dat or self._is_mixed_mat
-
-    @cached_property
-    def _is_direct(self):
-        return isinstance(self.data, Dat) and self.arg.map is None
-
-    @cached_property
-    def _is_indirect(self):
-        return isinstance(self.data, Dat) and self.arg.map is not None
 
     @collective
     def global_to_local_begin(self):
@@ -1438,6 +1435,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
         if configuration["type_check"] and path and path.toset != self.dataset.set:
             raise MapValueError("To Set of Map does not match Set of Dat.")
         return _make_object('Arg',
+                            data_class=self.__class__,
                             kernel_args=self._kernel_args_,
                             argtypes=self._argtypes_,
                             dtype=self.dtype,
@@ -2364,6 +2362,7 @@ class Global(DataCarrier, _EmptyDataMixin):
     @validate_in(('access', _modes, ModeValueError))
     def __call__(self, access, path=None):
         return _make_object('Arg',
+                            data_class=self.__class__,
                             kernel_args=self._kernel_args_,
                             argtypes=self._argtypes_,
                             dtype=self.dtype,
@@ -3192,13 +3191,15 @@ class Mat(DataCarrier):
         if configuration["type_check"] and tuple(path_maps) not in self.sparsity:
             raise MapValueError("Path maps not in sparsity maps")
         return _make_object('Arg',
+                            data_class=self.__class__,
                             kernel_args=self._kernel_args_,
                             argtypes=self._argtypes_,
                             dtype=self.dtype,
                             map=path_maps,
                             access=access,
                             lgmaps=lgmaps,
-                            unroll_map=unroll_map)
+                            unroll_map=unroll_map,
+                            is_mixed_mat=self.is_mixed)
 
     @cached_property
     def _wrapper_cache_key_(self):
@@ -3230,6 +3231,10 @@ class Mat(DataCarrier):
     def _argtypes_(self):
         """Ctypes argtype for this :class:`Mat`"""
         return tuple(ctypes.c_voidp for _ in self)
+
+    @cached_property
+    def is_mixed(self):
+        return self.sparsity.shape > (1, 1)
 
     @cached_property
     def dims(self):
@@ -3634,18 +3639,20 @@ class ParLoop(object):
         with self._parloop_event:
             orig_lgmaps = []
             for rt_arg in runtime_args:
-                if rt_arg._is_mat:
+                arg = rt_arg.arg; data = rt_arg.data
+
+                if arg._is_mat:
                     new_state = {INC: Mat.ADD_VALUES,
                                  WRITE: Mat.INSERT_VALUES}[arg.access]
-                    for m in rt_arg.data:
+                    for m in data:
                         m.change_assembly_state(new_state)
-                    rt_arg.data.change_assembly_state(new_state)
+                    data.change_assembly_state(new_state)
                     # Boundary conditions applied to the matrix appear
                     # as modified lgmaps on the Arg. We set them onto
                     # the matrix so things are correctly dropped in
                     # insertion, and then restore the original lgmaps
                     # afterwards.
-                    if rt_arg.arg.lgmaps is not None:
+                    if arg.lgmaps is not None:
                         olgmaps = []
                         for m, lgmaps in zip(rt_arg.data, rt_arg.arg.lgmaps):
                             olgmaps.append(m.handle.getLGMap())
