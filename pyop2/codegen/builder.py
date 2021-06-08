@@ -715,44 +715,27 @@ class WrapperBuilder(object):
             return (self.loop_index, None, self._loop_index)
 
     def add_argument(self, arg):
-        # import pdb; pdb.set_trace()
         interior_horizontal = self.iteration_region == ON_INTERIOR_FACETS
-        if arg._is_dat:
-            if arg._is_mixed:
-                packs = []
-                for a in arg:
-                    shape = a.shape[1:]
-                    if shape == ():
-                        shape = (1,)
-                    shape = (None, *shape)
-                    argument = Argument(shape, a.dtype, pfx="mdat")
-                    packs.append(a.pack(argument, arg.access, self.map_(a.map, unroll=a.unroll_map),
-                                             interior_horizontal=interior_horizontal,
-                                             init_with_zero=self.requires_zeroed_output_arguments))
-                    self.arguments.append(argument)
-                pack = MixedDatPack(packs, arg.access, arg.dtype, interior_horizontal=interior_horizontal)
-                self.packed_args.append(pack)
-                self.argument_accesses.append(arg.access)
+        if isinstance(arg, DatArg):
+            if arg._is_dat_view:
+                view_index = arg.data.index
             else:
-                if arg._is_dat_view:
-                    view_index = arg.data.index
-                else:
-                    view_index = None
-                shape = arg.shape[1:]
-                if shape == ():
-                    shape = (1,)
-                shape = (None, *shape)
-                argument = Argument(shape,
-                                    arg.dtype,
-                                    pfx="dat")
-                pack = arg.pack(argument, arg.access, self.map_(arg.map, unroll=arg.unroll_map),
-                                     interior_horizontal=interior_horizontal,
-                                     view_index=view_index,
-                                     init_with_zero=self.requires_zeroed_output_arguments)
-                self.arguments.append(argument)
-                self.packed_args.append(pack)
-                self.argument_accesses.append(arg.access)
-        elif arg._is_global:
+                view_index = None
+            shape = arg.shape[1:]
+            if shape == ():
+                shape = (1,)
+            shape = (None, *shape)
+            argument = Argument(shape,
+                                arg.dtype,
+                                pfx="dat")
+            pack = DatPack(argument, arg.access, self.map_(arg.map, unroll=arg.unroll_map),
+                                 interior_horizontal=interior_horizontal,
+                                 view_index=view_index,
+                                 init_with_zero=self.requires_zeroed_output_arguments)
+            self.arguments.append(argument)
+            self.packed_args.append(pack)
+            self.argument_accesses.append(arg.access)
+        elif isinstance(arg, GlobalArg):
             argument = Argument(arg.dim,
                                 arg.dtype,
                                 pfx="glob")
@@ -761,29 +744,43 @@ class WrapperBuilder(object):
             self.arguments.append(argument)
             self.packed_args.append(pack)
             self.argument_accesses.append(arg.access)
-        elif arg._is_mat:
-            if arg._is_mixed:
-                packs = []
-                for a in arg:
-                    argument = Argument((), PetscMat(), pfx="mat")
-                    map_ = tuple(self.map_(m, unroll=arg.unroll_map) for m in a.map)
-                    packs.append(arg.pack(argument, a.access, map_,
-                                               a.dim, a.dtype,
-                                               interior_horizontal=interior_horizontal))
-                    self.arguments.append(argument)
-                pack = MixedMatPack(packs, arg.access, arg.dtype,
-                                    arg.shape)
-                self.packed_args.append(pack)
-                self.argument_accesses.append(arg.access)
-            else:
-                argument = Argument((), PetscMat(), pfx="mat")
-                map_ = tuple(self.map_(m, unroll=arg.unroll_map) for m in arg.map)
-                pack = arg.data.pack(argument, arg.access, map_,
-                                     arg.dim, arg.dtype,
-                                     interior_horizontal=interior_horizontal)
+        elif isinstance(arg, MatArg):
+            argument = Argument((), PetscMat(), pfx="mat")
+            map_ = tuple(self.map_(m, unroll=arg.unroll_map) for m in arg.map)
+            pack = MatPack(argument, arg.access, map_,
+                                 arg.dim, arg.dtype,
+                                 interior_horizontal=interior_horizontal)
+            self.arguments.append(argument)
+            self.packed_args.append(pack)
+            self.argument_accesses.append(arg.access)
+        elif isinstance(arg, MixedDatArg):
+            packs = []
+            for a in arg:
+                shape = a.shape[1:]
+                if shape == ():
+                    shape = (1,)
+                shape = (None, *shape)
+                argument = Argument(shape, a.dtype, pfx="mdat")
+                packs.append(DatPack(argument, arg.access, self.map_(a.map, unroll=a.unroll_map),
+                                         interior_horizontal=interior_horizontal,
+                                         init_with_zero=self.requires_zeroed_output_arguments))
                 self.arguments.append(argument)
-                self.packed_args.append(pack)
-                self.argument_accesses.append(arg.access)
+            pack = MixedDatPack(packs, arg.access, arg.dtype, interior_horizontal=interior_horizontal)
+            self.packed_args.append(pack)
+            self.argument_accesses.append(arg.access)
+        elif isinstance(arg, MixedMatArg):
+            packs = []
+            for a in arg:
+                argument = Argument((), PetscMat(), pfx="mat")
+                map_ = tuple(self.map_(m, unroll=arg.unroll_map) for m in a.map)
+                packs.append(arg.pack(argument, a.access, map_,
+                                           a.dim, a.dtype,
+                                           interior_horizontal=interior_horizontal))
+                self.arguments.append(argument)
+            pack = MixedMatPack(packs, arg.access, arg.dtype,
+                                arg.shape)
+            self.packed_args.append(pack)
+            self.argument_accesses.append(arg.access)
         else:
             raise ValueError("Unhandled argument type")
 

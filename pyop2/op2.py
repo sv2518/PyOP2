@@ -46,7 +46,7 @@ from pyop2.sequential import Set, ExtrudedSet, MixedSet, Subset, DataSet, MixedD
 from pyop2.sequential import Map, MixedMap, Sparsity, Halo  # noqa: F401
 from pyop2.sequential import Global, GlobalDataSet        # noqa: F401
 from pyop2.sequential import Dat, MixedDat, DatView, Mat  # noqa: F401
-from pyop2.sequential import ParLoop as SeqParLoop
+from pyop2.base import ParLoop as SeqParLoop
 from pyop2.pyparloop import ParLoop as PyParLoop
 
 import types

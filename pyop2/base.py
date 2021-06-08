@@ -47,7 +47,8 @@ import operator
 import types
 from hashlib import md5
 
-from pyop2.datatypes import IntType, as_cstr, dtype_limits, ScalarType
+from pyop2.arg import DatArg, GlobalArg, MatArg, MixedDatArg, MixedMatArg
+from pyop2.datatypes import IntType, as_cstr, dtype_limits, ScalarType, as_ctypes
 from pyop2.configuration import configuration
 from pyop2.caching import Cached, ObjectCached
 from pyop2.exceptions import *
@@ -107,205 +108,6 @@ operation. OP2 is responsible for reducing over the different kernel
 invocations."""
 
 # Data API
-
-
-class Arg(object):
-
-    """An argument to a :func:`pyop2.op2.par_loop`.
-
-    .. warning ::
-        User code should not directly instantiate :class:`Arg`.
-        Instead, use the call syntax on the :class:`DataCarrier`.
-    """
-
-    def __init__(self, data_class, kernel_args, argtypes, dtype, shape=None, dim=None, map=None, access=None, lgmaps=None, unroll_map=False, is_mixed_mat=False):
-        """
-        :param data: A data-carrying object, either :class:`Dat` or class:`Mat`
-        :param map:  A :class:`Map` to access this :class:`Arg` or the default
-                     if the identity map is to be used.
-        :param access: An access descriptor of type :class:`Access`
-        :param lgmaps: For :class:`Mat` objects, a tuple of 2-tuples of local to
-            global maps used during assembly.
-
-        Checks that:
-
-        1. the maps used are initialized i.e. have mapping data associated, and
-        2. the to Set of the map used to access it matches the Set it is
-           defined on.
-
-        A :class:`MapValueError` is raised if these conditions are not met."""
-        self.data_class = data_class
-        self._kernel_args = kernel_args
-        self._argtypes = argtypes
-        self._dtype = dtype
-        self.shape = shape
-        self.dim = dim
-        self._map = map
-        self._is_mixed_mat = is_mixed_mat
-        if map is None:
-            self.map_tuple = ()
-        elif isinstance(map, Map):
-            self.map_tuple = (map, )
-        else:
-            self.map_tuple = tuple(map)
-
-        if dtype.kind == "c" and (access == MIN or access == MAX):
-            raise ValueError("MIN and MAX access descriptors are undefined on complex data.")
-        self._access = access
-
-        self.unroll_map = unroll_map
-        self.lgmaps = None
-        if self._is_mat and lgmaps is not None:
-            self.lgmaps = as_tuple(lgmaps)
-            assert len(self.lgmaps) == self.data.nblocks
-        else:
-            if lgmaps is not None:
-                raise ValueError("Local to global maps only for matrices")
-
-        # Check arguments for consistency
-        # if configuration["type_check"] and not (self._is_global or map is None):
-        #     for j, m in enumerate(map):
-        #         if m.iterset.total_size > 0 and len(m.values_with_halo) == 0:
-        #             raise MapValueError("%s is not initialized." % map)
-        #         if self._is_mat and m.toset != data.sparsity.dsets[j].set:
-        #             raise MapValueError(
-        #                 "To set of %s doesn't match the set of %s." % (map, data))
-        #     if self._is_dat and map.toset != data.dataset.set:
-        #         raise MapValueError(
-        #             "To set of %s doesn't match the set of %s." % (map, data))
-
-    def pack(self, *args, **kwargs):
-        from pyop2.codegen.builder import DatPack, MatPack
-        if self._is_dat:
-            return DatPack(*args, **kwargs)
-        elif self._is_mat:
-            return MatPack(*args, **kwargs)
-        else:
-            raise AssertionError
-
-    @cached_property
-    def _kernel_args_(self):
-        return self._kernel_args
-
-    @cached_property
-    def _argtypes_(self):
-        return self._argtypes
-
-    @cached_property
-    def _wrapper_cache_key_(self):
-        if self.map is not None:
-            map_ = tuple(None if m is None else m._wrapper_cache_key_ for m in self.map)
-        else:
-            map_ = self.map
-        # return (type(self), self.access, self.data._wrapper_cache_key_, map_, self.unroll_map)
-        return (type(self), self.access, self.data_class, map_, self.unroll_map)
-
-    @property
-    def _key(self):
-        return (self.data_class, self._map, self._access)
-
-    def __eq__(self, other):
-        r""":class:`Arg`\s compare equal of they are defined on the same data,
-        use the same :class:`Map` with the same index and the same access
-        descriptor."""
-        return self._key == other._key
-
-    def __ne__(self, other):
-        r""":class:`Arg`\s compare equal of they are defined on the same data,
-        use the same :class:`Map` with the same index and the same access
-        descriptor."""
-        return not self.__eq__(other)
-
-    def __str__(self):
-        return "OP2 Arg: dat %s, map %s, access %s" % \
-            (self.data_class, self._map, self._access)
-
-    def __repr__(self):
-        return "Arg(%r, %r, %r)" % \
-            (self.data_class, self._map, self._access)
-
-    def __iter__(self):
-        for arg in self.split():
-            yield arg
-
-    def split(self):
-        """Split a mixed argument into a tuple of constituent arguments."""
-        if self._is_mixed_dat:
-            args = []
-            for 
-            return tuple(args)
-            return tuple(_make_object('Arg', d, m, self._access)
-                         for d, m in zip(self.data, self._map))
-        elif self._is_mixed_mat:
-            rows, cols = self.shape
-            mr, mc = self.map
-            return tuple(_make_object('Arg', data_class=Mat, self.data[i, j], (mr.split[i], mc.split[j]),
-                                      access=self._access)
-                         for i in range(rows) for j in range(cols))
-        else:
-            return (self,)
-
-    @cached_property
-    def name(self):
-        """The generated argument name."""
-        return "arg%d" % self.position
-
-    @cached_property
-    def ctype(self):
-        """String representing the C type of the data in this ``Arg``."""
-        return self.data.ctype
-
-    @cached_property
-    def dtype(self):
-        """Numpy datatype of this Arg"""
-        return self._dtype
-
-    @cached_property
-    def map(self):
-        """The :class:`Map` via which the data is to be accessed."""
-        return self._map
-
-    @cached_property
-    def access(self):
-        """Access descriptor. One of the constants of type :class:`Access`"""
-        return self._access
-
-    @cached_property
-    def _is_dat_view(self):
-        return issubclass(self.data_class, DatView)
-
-    @cached_property
-    def _is_mat(self):
-        return issubclass(self.data_class, Mat)
-
-    @cached_property
-    def _is_global(self):
-        return issubclass(self.data_class, Global)
-
-    @cached_property
-    def _is_global_reduction(self):
-        return self._is_global and self._access in {INC, MIN, MAX}
-
-    @cached_property
-    def _is_dat(self):
-        return issubclass(self.data_class, Dat)
-
-    @cached_property
-    def _is_mixed_dat(self):
-        return issubclass(self.data_class, MixedDat)
-
-    @cached_property
-    def _is_mixed(self):
-        return self._is_mixed_dat or self._is_mixed_mat
-
-    @cached_property
-    def _is_direct(self):
-        return issubclass(self.data_class, Dat) and self.map is None
-
-    @cached_property
-    def _is_indirect(self):
-        return issubclass(self.data_class, Dat) and self.map is not None
-
 
 class RuntimeArg:
     """Class connecting the symbolic Arg and DataCarrier at runtime."""
@@ -383,34 +185,11 @@ class RuntimeArg:
             self.data._data[:] = self.data._buf[:]
 
 
-class SetArg:
-    def __init__(self, argtypes, kernel_args, *, constant_layers=False, extruded=False, subset=False):
-        self._argtypes = argtypes
-        self._kernel_args = kernel_args
-        self._constant_layers = constant_layers
-        self._extruded = extruded
-        self._subset = subset
-
-    @property
-    def argtypes(self):
-        return self._argtypes
-
-    @property
-    def kernel_args(self):
-        return self._kernel_args
-
-    @property
-    def constant_layers(self):
-        return self._constant_layers
-
-    @property
-    def extruded(self):
-        return self._extruded
-
-    @property
-    def subset(self):
-        return self._subset
-
+class SymbolicSet:
+    def __init__(self, constant_layers=False, extruded=False, subset=False):
+        self.constant_layers = constant_layers
+        self.extruded = extruded
+        self.subset = subset
 
 class Set(object):
 
@@ -477,7 +256,7 @@ class Set(object):
         self._cache = {}
 
     def to_arg(self):
-        return SetArg(argtypes=self._argtypes_, kernel_args=self._kernel_args_)
+        return SymbolicSet()
 
     @cached_property
     def core_size(self):
@@ -695,8 +474,7 @@ class ExtrudedSet(Set):
         self._extruded = True
 
     def to_arg(self):
-        return SetArg(self._argtypes_, self._kernel_args_, constant_layers=self.constant_layers,
-                      extruded=True)
+        return SymbolicSet(constant_layers=self.constant_layers, extruded=True)
 
     @cached_property
     def _kernel_args_(self):
@@ -780,7 +558,7 @@ class Subset(ExtrudedSet):
         self._extruded = superset._extruded
 
     def to_arg(self):
-        return SetArg(self._argtypes_, self._kernel_args_, subset=True)
+        return SymbolicSet(subset=True)
 
     @cached_property
     def _kernel_args_(self):
@@ -846,7 +624,7 @@ class SetPartition(object):
         self.size = size
 
 
-class MixedSet(Set, ObjectCached):
+class MixedSet(ObjectCached):
     r"""A container for a bag of :class:`Set`\s."""
 
     def __init__(self, sets):
@@ -1116,7 +894,7 @@ class GlobalDataSet(DataSet):
         return "GlobalDataSet(%r)" % (self._global)
 
 
-class MixedDataSet(DataSet, ObjectCached):
+class MixedDataSet(ObjectCached):
     r"""A container for a bag of :class:`DataSet`\s.
 
     Initialized either from a :class:`MixedSet` and an iterable or iterator of
@@ -1441,14 +1219,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
     def __call__(self, access, path=None):
         if configuration["type_check"] and path and path.toset != self.dataset.set:
             raise MapValueError("To Set of Map does not match Set of Dat.")
-        return _make_object('Arg',
-                            data_class=self.__class__,
-                            kernel_args=self._kernel_args_,
-                            argtypes=self._argtypes_,
-                            dtype=self.dtype,
-                            shape=self.shape,
-                            map=path,
-                            access=access)
+        return DatArg(access, self.dtype, path, shape=self.shape)
 
     def __getitem__(self, idx):
         """Return self if ``idx`` is 0, raise an error otherwise."""
@@ -2050,7 +1821,7 @@ class DatView(Dat):
         return full[idx]
 
 
-class MixedDat(Dat):
+class MixedDat:
     r"""A container for a bag of :class:`Dat`\s.
 
     Initialized either from a :class:`MixedDataSet`, a :class:`MixedSet`, or
@@ -2085,14 +1856,8 @@ class MixedDat(Dat):
     def __call__(self, access, path=None):
         if configuration["type_check"] and path and path.toset != self.dataset.set:
             raise MapValueError("To Set of Map does not match Set of Dat.")
-        return _make_object('Arg',
-                            data_class=self.__class__,
-                            kernel_args=self._kernel_args_,
-                            argtypes=self._argtypes_,
-                            dtype=self.dtype,
-                            map=path,
-                            access=access)
 
+        return MixedDatArg(dat(access, path) for dat in self._dats)
 
     @cached_property
     def _kernel_args_(self):
@@ -2393,15 +2158,7 @@ class Global(DataCarrier, _EmptyDataMixin):
 
     @validate_in(('access', _modes, ModeValueError))
     def __call__(self, access, path=None):
-        return _make_object('Arg',
-                            data_class=self.__class__,
-                            kernel_args=self._kernel_args_,
-                            argtypes=self._argtypes_,
-                            dtype=self.dtype,
-                            shape=self.shape,
-                            dim=self._dim,
-                            map=path,
-                            access=access)
+        return GlobalArg(access, self._dtype, path)
 
     def __iter__(self):
         """Yield self when iterated over."""
@@ -2721,7 +2478,7 @@ class Map(object):
         return self == o
 
 
-class MixedMap(Map, ObjectCached):
+class MixedMap(ObjectCached):
     r"""A container for a bag of :class:`Map`\s."""
 
     def __init__(self, maps):
@@ -3219,18 +2976,7 @@ class Mat(DataCarrier):
         path_maps = as_tuple(path, Map, 2)
         if configuration["type_check"] and tuple(path_maps) not in self.sparsity:
             raise MapValueError("Path maps not in sparsity maps")
-        return _make_object('Arg',
-                            data_class=self.__class__,
-                            kernel_args=self._kernel_args_,
-                            argtypes=self._argtypes_,
-                            dtype=self.dtype,
-                            shape=self.sparsity.shape,
-                            dim=self.dims,
-                            map=path_maps,
-                            access=access,
-                            lgmaps=lgmaps,
-                            unroll_map=unroll_map,
-                            is_mixed_mat=self.is_mixed)
+        return MatArg(access, self.dtype, path_maps, dims=self.dims, lgmaps=lgmaps, unroll_map=unroll_map)
 
     @cached_property
     def _wrapper_cache_key_(self):
@@ -3385,6 +3131,12 @@ class Mat(DataCarrier):
         return "Mat(%r, %r, %r)" \
                % (self._sparsity, self._datatype, self._name)
 
+
+class MixedMat:
+    def __call__(self, access, path=None):
+        return MixedMatArg((mat(access, path) for mat in self._mats), shape=self.sparsity.shape)
+
+
 # Kernel API
 
 
@@ -3517,25 +3269,133 @@ class JITModule(Cached):
        should not hold any references to objects you might want to be
        collected (such PyOP2 data objects)."""
 
-    _cache = {}
+    _cppargs = []
+    _libraries = []
+    _system_headers = []
 
+    def __init__(self, kernel, iterset, *args, **kwargs):
+        r"""
+        A cached compiled function to execute for a specified par_loop.
+
+        See :func:`~.par_loop` for the description of arguments.
+
+        .. warning ::
+
+           Note to implementors.  This object is *cached*, and therefore
+           should not hold any long term references to objects that
+           you want to be collected.  In particular, after the
+           ``args`` have been inspected to produce the compiled code,
+           they **must not** remain part of the object's slots,
+           otherwise they (and the :class:`~.Dat`\s, :class:`~.Map`\s
+           and :class:`~.Mat`\s they reference) will never be collected.
+        """
+        self._kernel = kernel
+        self._fun = None
+        self._iterset = iterset
+        self._args = args
+        self._iteration_region = kwargs.get('iterate', ALL)
+        self._pass_layer_arg = kwargs.get('pass_layer_arg', False)
+        self.comm = iterset.comm
+        # Copy the class variables, so we don't overwrite them
+        from copy import deepcopy as dcopy
+        self._cppargs = dcopy(type(self)._cppargs)
+        self._libraries = dcopy(type(self)._libraries)
+        self._system_headers = dcopy(type(self)._system_headers)
+        self.compile()
+
+    _cache = {}
+         
     @classmethod
-    def _cache_key(cls, kernel, iterset, *args, **kwargs):
+    def _cache_key(cls, kernel, iterset, *data_args, **kwargs):
         counter = itertools.count()
         seen = defaultdict(lambda: next(counter))
-        key = (kernel._wrapper_cache_key_
-               + (isinstance(iterset, ExtrudedSet),
-                  isinstance(iterset, ExtrudedSet) and iterset.constant_layers,
-                  isinstance(iterset, Subset)))
+        key = (kernel._wrapper_cache_key_,
+               isinstance(iterset, ExtrudedSet) and iterset.constant_layers,
+               isinstance(iterset, Subset))
 
-        for arg in args:
+        for arg in data_args:
             key += arg._wrapper_cache_key_
             for map_ in arg.map_tuple:
                 key += (seen[map_],)
-
         key += (kwargs.get("iterate", None), cls, configuration["simd_width"])
-
         return key
+
+
+    @collective
+    def __call__(self, *args):
+        return self._fun(*args)
+
+    @cached_property
+    def _wrapper_name(self):
+        return 'wrap_%s' % self._kernel.name
+
+    @cached_property
+    def code_to_compile(self):
+        from pyop2.codegen.builder import WrapperBuilder
+        from pyop2.codegen.rep2loopy import generate
+
+        builder = WrapperBuilder(kernel=self._kernel,
+                                 subset=isinstance(self._iterset, Subset),
+                                 extruded=isinstance(self._iterset, ExtrudedSet),
+                                 constant_layers=isinstance(self._iterset, ExtrudedSet) and self.iterset.constant_layers,
+                                 iteration_region=self._iteration_region,
+                                 pass_layer_to_kernel=self._pass_layer_arg)
+        for arg in self._args:
+            builder.add_argument(arg)
+
+        wrapper = generate(builder)
+        code = loopy.generate_code_v2(wrapper)
+
+        if self._kernel._cpp:
+            from loopy.codegen.result import process_preambles
+            preamble = "".join(process_preambles(getattr(code, "device_preambles", [])))
+            device_code = "\n\n".join(str(dp.ast) for dp in code.device_programs)
+            return preamble + "\nextern \"C\" {\n" + device_code + "\n}\n"
+        return code.device_code()
+
+    @collective
+    def compile(self):
+        from pyop2.configuration import configuration
+
+        compiler = configuration["compiler"]
+        extension = "cpp" if self._kernel._cpp else "c"
+        cppargs = self._cppargs
+        cppargs += ["-I%s/include" % d for d in get_petsc_dir()] + \
+                   ["-I%s" % d for d in self._kernel._include_dirs] + \
+                   ["-I%s" % os.path.abspath(os.path.dirname(__file__))]
+        ldargs = ["-L%s/lib" % d for d in get_petsc_dir()] + \
+                 ["-Wl,-rpath,%s/lib" % d for d in get_petsc_dir()] + \
+                 ["-lpetsc", "-lm"] + self._libraries
+        ldargs += self._kernel._ldargs
+
+        from pyop2 import compilation
+        self._fun = compilation.load(self,
+                                     extension,
+                                     self._wrapper_name,
+                                     cppargs=cppargs,
+                                     ldargs=ldargs,
+                                     argtypes=self.argtypes,
+                                     restype=ctypes.c_int,
+                                     compiler=compiler,
+                                     comm=self.comm)
+
+    @cached_property
+    def argtypes(self):
+        index_type = as_ctypes(IntType)
+        argtypes = (index_type, index_type)
+        argtypes += self._iterset._argtypes_
+        for arg in self._args:
+            argtypes += arg.data._argtypes_
+        seen = set()
+        for arg in self._args:
+            maps = arg.arg.map_tuple
+            for map_ in maps:
+                for k, t in zip(map_._kernel_args_, map_._argtypes_):
+                    if k in seen:
+                        continue
+                    argtypes += (t,)
+                    seen.add(k)
+        return argtypes
 
 
 class IterationRegion(IntEnum):
@@ -3602,15 +3462,37 @@ class ParLoop(object):
         #             if arg2.data is arg1.data and arg2.map is arg1.map:
         #                 arg2.indirect_position = arg1.indirect_position
 
-        self.arglist = self.prepare_arglist(iterset_arg, *self.args)
 
-    def prepare_arglist(self, iterset_arg, *args):
+    def prepare_arglist(self, iterset, args):
         """Prepare the argument list for calling generated code.
 
         :arg iterset: The :class:`Set` iterated over.
         :arg args: A list of :class:`Args`, the argument to the :fn:`par_loop`.
         """
-        return ()
+        arglist = iterset._kernel_args_
+        for arg in args:
+            arglist += arg._kernel_args_
+        seen = set()
+        for arg in args:
+            maps = arg.map_tuple
+            for map_ in maps:
+                if map_ is None:
+                    continue
+                for k in map_._kernel_args_:
+                    if k in seen:
+                        continue
+                    arglist += (k,)
+                    seen.add(k)
+        return arglist
+
+    def _compute_event(self, fun, iterset):
+        return timed_region("ParLoop_{0}_{1}".format(iterset.name, fun._wrapper_name))
+
+    @collective
+    def _compute(self, part, fun, iterset, *arglist):
+        with self._compute_event(fun, iterset):
+            self.log_flops(part.size * self.num_flops(iterset))
+            fun(part.offset, part.offset + part.size, *arglist)
 
     def num_flops(self, iterset):
         size = 1
@@ -3647,6 +3529,7 @@ class ParLoop(object):
 
         # TODO: Move as much of this to constructor
         # check_iterset(runtime_args, iterset)
+        arglist = self.prepare_arglist(iterset, data_objs)
 
         seen = {}
         for arg, data_obj in zip(self.args, data_objs):
@@ -3696,11 +3579,9 @@ class ParLoop(object):
                         orig_lgmaps.append(olgmaps)
 
             self.global_to_local_begin(runtime_args)
-            arglist = self.arglist
             # The compilation process should occur here since it is not a part
             # of the code generation (a compiled parloop is not composable).
-            fun = _make_object("JITModule",
-                               self.kernel, iterset, *self.args,
+            fun = JITModule( self.kernel, iterset, *data_objs,
                                iterate=self.iteration_region,
                                pass_layer_arg=self._pass_layer_arg)
 
@@ -3936,4 +3817,4 @@ def par_loop(kernel, iterset, *args, **kwargs):
     if isinstance(kernel, types.FunctionType):
         from pyop2 import pyparloop
         return pyparloop.ParLoop(kernel, iterset, *args, **kwargs).compute()
-    return _make_object('ParLoop', kernel, iterset.to_arg(), *args, **kwargs).compute(iterset)
+    return ParLoop(kernel, iterset.to_arg(), *args, **kwargs).compute(iterset)
