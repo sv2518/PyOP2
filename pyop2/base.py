@@ -62,6 +62,7 @@ from pyop2.version import __version__ as version
 from coffee.base import Node
 from coffee.visitors import EstimateFlops
 from functools import reduce
+from petsc4py import PETSc
 
 import loopy
 
@@ -3528,14 +3529,14 @@ class ParLoop(object):
             self._compute(iterset.core_part, fun, iterset, *arglist)
             self.global_to_local_end(data_objs)
             self._compute(iterset.owned_part, fun, iterset, *arglist)
-            request = self.reduction_begin(data_objs)
+            requests = self.reduction_begin(data_objs)
             self.local_to_global_begin(data_objs)
             self.update_arg_data_state(data_objs)
             for arg in reversed(self.args):
                 if isinstance(arg, MatArg) and arg.lgmaps is not None:
                     for m, lgmaps in zip(arg.data, orig_lgmaps.pop()):
                         m.handle.setLGMap(*lgmaps)
-            self.reduction_end(data_objs, reduced_globals, request=request)
+            self.reduction_end(data_objs, reduced_globals, requests)
             self.local_to_global_end(data_objs)
 
     @cached_property
