@@ -5,6 +5,7 @@ from functools import reduce
 
 import numpy
 from loopy.types import OpaqueType
+from pyop2.arg import DatArg, DatViewArg, GlobalArg, MatArg, MixedMatArg, MixedDatArg
 from pyop2.codegen.representation import (Accumulate, Argument, Comparison,
                                           DummyInstruction, Extent, FixedIndex,
                                           FunctionCall, Index, Indexed,
@@ -717,8 +718,8 @@ class WrapperBuilder(object):
     def add_argument(self, arg):
         interior_horizontal = self.iteration_region == ON_INTERIOR_FACETS
         if isinstance(arg, DatArg):
-            if arg._is_dat_view:
-                view_index = arg.data.index
+            if isinstance(arg, DatViewArg):
+                view_index = arg.index
             else:
                 view_index = None
             shape = arg.shape[1:]

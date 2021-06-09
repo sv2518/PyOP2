@@ -121,8 +121,8 @@ class RuntimeArg:
         """Begin halo exchange for the argument if a halo update is required.
         Doing halo exchanges only makes sense for :class:`Dat` objects.
         """
-        assert self._is_dat, "Doing halo exchanges only makes sense for Dats"
-        if self._is_direct:
+        assert isinstance(self.arg, DatArg), "Doing halo exchanges only makes sense for Dats"
+        if self.arg.is_direct:
             return
         if self.arg.access is not WRITE:
             self.data.global_to_local_begin(self.arg.access)
@@ -132,24 +132,24 @@ class RuntimeArg:
         """Finish halo exchange for the argument if a halo update is required.
         Doing halo exchanges only makes sense for :class:`Dat` objects.
         """
-        assert self._is_dat, "Doing halo exchanges only makes sense for Dats"
-        if self._is_direct:
+        assert isinstance(self.arg, DatArg), "Doing halo exchanges only makes sense for Dats"
+        if self.arg.is_direct:
             return
         if self.arg.access is not WRITE:
             self.data.global_to_local_end(self.arg.access)
 
     @collective
     def local_to_global_begin(self):
-        assert self._is_dat, "Doing halo exchanges only makes sense for Dats"
-        if self._is_direct:
+        assert isinstance(self.arg, DatArg), "Doing halo exchanges only makes sense for Dats"
+        if self.arg.is_direct:
             return
         if self.arg.access in {INC, MIN, MAX}:
             self.data.local_to_global_begin(self.arg.access)
 
     @collective
     def local_to_global_end(self):
-        assert self._is_dat, "Doing halo exchanges only makes sense for Dats"
-        if self._is_direct:
+        assert isinstance(self.arg, DatArg), "Doing halo exchanges only makes sense for Dats"
+        if self.arg.is_direct:
             return
         if self.arg.access in {INC, MIN, MAX}:
             self.data.local_to_global_end(self.arg.access)
@@ -158,7 +158,7 @@ class RuntimeArg:
     def reduction_begin(self, comm):
         """Begin reduction for the argument if its access is INC, MIN, or MAX.
         Doing a reduction only makes sense for :class:`Global` objects."""
-        assert isinstance(self.data, Global), \
+        assert isinstance(self.arg, GlobalArg), \
             "Doing global reduction only makes sense for Globals"
         if self.arg.access is not READ:
             if self.arg.access is INC:
@@ -176,7 +176,7 @@ class RuntimeArg:
     def reduction_end(self):
         """End reduction for the argument if it is in flight.
         Doing a reduction only makes sense for :class:`Global` objects."""
-        assert self._is_global, \
+        assert isinstance(self.arg, GlobalArg), \
             "Doing global reduction only makes sense for Globals"
         if self.arg.access is not READ:
             if MPI.VERSION >= 3:
@@ -186,10 +186,12 @@ class RuntimeArg:
 
 
 class SymbolicSet:
-    def __init__(self, constant_layers=False, extruded=False, subset=False):
+    def __init__(self, argtypes, comm, constant_layers=False, extruded=False, subset=False):
+        self._argtypes_ = argtypes
         self.constant_layers = constant_layers
         self.extruded = extruded
         self.subset = subset
+        self.comm = comm
 
 class Set(object):
 
@@ -256,7 +258,7 @@ class Set(object):
         self._cache = {}
 
     def to_arg(self):
-        return SymbolicSet()
+        return SymbolicSet(self._argtypes_, self.comm)
 
     @cached_property
     def core_size(self):
@@ -474,7 +476,7 @@ class ExtrudedSet(Set):
         self._extruded = True
 
     def to_arg(self):
-        return SymbolicSet(constant_layers=self.constant_layers, extruded=True)
+        return SymbolicSet(self._argtypes_, self.comm, constant_layers=self.constant_layers, extruded=True)
 
     @cached_property
     def _kernel_args_(self):
@@ -558,7 +560,7 @@ class Subset(ExtrudedSet):
         self._extruded = superset._extruded
 
     def to_arg(self):
-        return SymbolicSet(subset=True)
+        return SymbolicSet(self._argtypes_, self.comm, subset=True)
 
     @cached_property
     def _kernel_args_(self):
@@ -1219,7 +1221,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
     def __call__(self, access, path=None):
         if configuration["type_check"] and path and path.toset != self.dataset.set:
             raise MapValueError("To Set of Map does not match Set of Dat.")
-        return DatArg(access, self.dtype, path, shape=self.shape)
+        return DatArg(self._argtypes_, access, self.dtype, path, shape=self.shape)
 
     def __getitem__(self, idx):
         """Return self if ``idx`` is 0, raise an error otherwise."""
@@ -1763,12 +1765,10 @@ class DatView(Dat):
     def __call__(self, access, path=None):
         if configuration["type_check"] and path and path.toset != self.dataset.set:
             raise MapValueError("To Set of Map does not match Set of Dat.")
-        return _make_object('Arg',
-                            data_class=self.__class__,
-                            kernel_args=self._kernel_args_,
-                            argtypes=self._argtypes_,
+        return DatViewArg(argtypes=self._argtypes_,
                             dtype=self.dtype,
                             shape=self._parent.shape,
+                            index=self.index,
                             map=path,
                             access=access)
 
@@ -2158,7 +2158,7 @@ class Global(DataCarrier, _EmptyDataMixin):
 
     @validate_in(('access', _modes, ModeValueError))
     def __call__(self, access, path=None):
-        return GlobalArg(access, self._dtype, path)
+        return GlobalArg(self._argtypes_, access, self._dtype, path)
 
     def __iter__(self):
         """Yield self when iterated over."""
@@ -2976,7 +2976,7 @@ class Mat(DataCarrier):
         path_maps = as_tuple(path, Map, 2)
         if configuration["type_check"] and tuple(path_maps) not in self.sparsity:
             raise MapValueError("Path maps not in sparsity maps")
-        return MatArg(access, self.dtype, path_maps, dims=self.dims, lgmaps=lgmaps, unroll_map=unroll_map)
+        return MatArg(self._argtypes_, access, self.dtype, path_maps, dims=self.dims, lgmaps=lgmaps, unroll_map=unroll_map)
 
     @cached_property
     def _wrapper_cache_key_(self):
@@ -3273,7 +3273,7 @@ class JITModule(Cached):
     _libraries = []
     _system_headers = []
 
-    def __init__(self, kernel, iterset, *args, **kwargs):
+    def __init__(self, kernel, iterset_arg, args, **kwargs):
         r"""
         A cached compiled function to execute for a specified par_loop.
 
@@ -3291,11 +3291,11 @@ class JITModule(Cached):
         """
         self._kernel = kernel
         self._fun = None
-        self._iterset = iterset
+        self._iterset_arg = iterset_arg
         self._args = args
         self._iteration_region = kwargs.get('iterate', ALL)
         self._pass_layer_arg = kwargs.get('pass_layer_arg', False)
-        self.comm = iterset.comm
+        self.comm = iterset_arg.comm
         # Copy the class variables, so we don't overwrite them
         from copy import deepcopy as dcopy
         self._cppargs = dcopy(type(self)._cppargs)
@@ -3306,14 +3306,14 @@ class JITModule(Cached):
     _cache = {}
          
     @classmethod
-    def _cache_key(cls, kernel, iterset, *data_args, **kwargs):
+    def _cache_key(cls, kernel, iterset_arg, args, **kwargs):
         counter = itertools.count()
         seen = defaultdict(lambda: next(counter))
         key = (kernel._wrapper_cache_key_,
-               isinstance(iterset, ExtrudedSet) and iterset.constant_layers,
-               isinstance(iterset, Subset))
+               iterset_arg.extruded and iterset_arg.constant_layers,
+               iterset_arg.subset)
 
-        for arg in data_args:
+        for arg in args:
             key += arg._wrapper_cache_key_
             for map_ in arg.map_tuple:
                 key += (seen[map_],)
@@ -3335,9 +3335,9 @@ class JITModule(Cached):
         from pyop2.codegen.rep2loopy import generate
 
         builder = WrapperBuilder(kernel=self._kernel,
-                                 subset=isinstance(self._iterset, Subset),
-                                 extruded=isinstance(self._iterset, ExtrudedSet),
-                                 constant_layers=isinstance(self._iterset, ExtrudedSet) and self.iterset.constant_layers,
+                                 subset=self._iterset_arg.subset,
+                                 extruded=self._iterset_arg.extruded,
+                                 constant_layers=self._iterset_arg.constant_layers,
                                  iteration_region=self._iteration_region,
                                  pass_layer_to_kernel=self._pass_layer_arg)
         for arg in self._args:
@@ -3383,12 +3383,12 @@ class JITModule(Cached):
     def argtypes(self):
         index_type = as_ctypes(IntType)
         argtypes = (index_type, index_type)
-        argtypes += self._iterset._argtypes_
+        argtypes += self._iterset_arg._argtypes_
         for arg in self._args:
-            argtypes += arg.data._argtypes_
+            argtypes += arg._argtypes_
         seen = set()
         for arg in self._args:
-            maps = arg.arg.map_tuple
+            maps = arg.map_tuple
             for map_ in maps:
                 for k, t in zip(map_._kernel_args_, map_._argtypes_):
                     if k in seen:
@@ -3463,18 +3463,18 @@ class ParLoop(object):
         #                 arg2.indirect_position = arg1.indirect_position
 
 
-    def prepare_arglist(self, iterset, args):
+    def prepare_arglist(self, iterset, runtime_args):
         """Prepare the argument list for calling generated code.
 
         :arg iterset: The :class:`Set` iterated over.
         :arg args: A list of :class:`Args`, the argument to the :fn:`par_loop`.
         """
         arglist = iterset._kernel_args_
-        for arg in args:
-            arglist += arg._kernel_args_
+        for arg in runtime_args:
+            arglist += arg.data._kernel_args_
         seen = set()
-        for arg in args:
-            maps = arg.map_tuple
+        for arg in runtime_args:
+            maps = arg.arg.map_tuple
             for map_ in maps:
                 if map_ is None:
                     continue
@@ -3508,13 +3508,14 @@ class ParLoop(object):
     def log_flops(self, flops):
         pass
 
-    @property
+    @cached_property
     @collective
     def _jitmodule(self):
-        """Return the :class:`JITModule` that encapsulates the compiled par_loop code.
+        """Return the :class:`JITModule` that encapsulates the compiled par_loop code."""
+        return JITModule(self.kernel, self._iterset_arg, self._actual_args,
+                         iterate=self.iteration_region,
+                         pass_layer_arg=self._pass_layer_arg)
 
-        Return None if the child class should deal with this in another way."""
-        return None
 
     @cached_property
     def _parloop_event(self):
@@ -3529,7 +3530,7 @@ class ParLoop(object):
 
         # TODO: Move as much of this to constructor
         # check_iterset(runtime_args, iterset)
-        arglist = self.prepare_arglist(iterset, data_objs)
+        arglist = self.prepare_arglist(iterset, runtime_args)
 
         seen = {}
         for arg, data_obj in zip(self.args, data_objs):
@@ -3548,7 +3549,7 @@ class ParLoop(object):
         # Don't care about MIN and MAX because they commute with the reduction
         reduced_globals = {}
         for rt_arg in runtime_args:
-            if rt_arg.arg._is_global_reduction and rt_arg.arg.access == INC:
+            if isinstance(rt_arg.arg, GlobalArg) and rt_arg.arg.access == INC:
                 glob = rt_arg.data
                 tmp = _make_object('Global', glob.dim, data=np.zeros_like(glob.data_ro), dtype=glob.dtype)
                 reduced_globals[tmp] = glob
@@ -3560,7 +3561,7 @@ class ParLoop(object):
             for rt_arg in runtime_args:
                 arg = rt_arg.arg; data = rt_arg.data
 
-                if arg._is_mat:
+                if isinstance(arg, MatArg):
                     new_state = {INC: Mat.ADD_VALUES,
                                  WRITE: Mat.INSERT_VALUES}[arg.access]
                     for m in data:
@@ -3581,9 +3582,7 @@ class ParLoop(object):
             self.global_to_local_begin(runtime_args)
             # The compilation process should occur here since it is not a part
             # of the code generation (a compiled parloop is not composable).
-            fun = JITModule( self.kernel, iterset, *data_objs,
-                               iterate=self.iteration_region,
-                               pass_layer_arg=self._pass_layer_arg)
+            fun = self._jitmodule
 
             self._compute(iterset.core_part, fun, iterset, *arglist)
             self.global_to_local_end(runtime_args)
@@ -3612,26 +3611,26 @@ class ParLoop(object):
     @collective
     def global_to_local_begin(self, runtime_args):
         """Start halo exchanges."""
-        for dat in self.extract_unique_dats(runtime_args):
-            dat.global_to_local_begin()
+        for rt_arg in self.extract_unique_dats(runtime_args):
+            rt_arg.global_to_local_begin()
 
     @collective
     def global_to_local_end(self, runtime_args):
         """Finish halo exchanges"""
-        for dat in self.extract_unique_dats(runtime_args):
-            dat.global_to_local_end()
+        for rt_arg in self.extract_unique_dats(runtime_args):
+            rt_arg.global_to_local_end()
 
     @collective
     def local_to_global_begin(self, runtime_args):
         """Start halo exchanges."""
-        for dat in self.extract_unique_dats(runtime_args):
-            dat.local_to_global_begin()
+        for rt_arg in self.extract_unique_dats(runtime_args):
+            rt_arg.local_to_global_begin()
 
     @collective
     def local_to_global_end(self, runtime_args):
         """Finish halo exchanges (wait on irecvs)"""
-        for dat in self.extract_unique_dats(runtime_args):
-            dat.local_to_global_end()
+        for rt_arg in self.extract_unique_dats(runtime_args):
+            rt_arg.local_to_global_end()
 
     @cached_property
     def _reduction_event_begin(self):
@@ -3682,7 +3681,7 @@ class ParLoop(object):
                 rt_arg.data.assembly_state = state
 
     def extract_dats(self, runtime_args):
-        return tuple(rt_arg.data for rt_arg in runtime_args if isinstance(rt_arg.data, Dat))
+        return tuple(rt_arg for rt_arg in runtime_args if isinstance(rt_arg.data, Dat))
 
     def extract_unique_dats(self, runtime_args):
         return tuple(set(self.extract_dats(runtime_args)))
@@ -3817,4 +3816,4 @@ def par_loop(kernel, iterset, *args, **kwargs):
     if isinstance(kernel, types.FunctionType):
         from pyop2 import pyparloop
         return pyparloop.ParLoop(kernel, iterset, *args, **kwargs).compute()
-    return ParLoop(kernel, iterset.to_arg(), *args, **kwargs).compute(iterset)
+    return ParLoop(kernel, iterset.to_arg(), *args, **kwargs).compute(iterset, *args)

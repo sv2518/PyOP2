@@ -137,8 +137,9 @@ class TestIndirectLoop:
         """Set a Dat to a scalar value with op2.WRITE."""
         kernel_wo = "static void kernel_wo(unsigned int* x) { *x = 42; }\n"
 
-        op2.par_loop(op2.Kernel(kernel_wo, "kernel_wo"),
-                     iterset, x(op2.WRITE, iterset2indset))
+        pl = op2.ParLoop(op2.Kernel(kernel_wo, "kernel_wo"),
+                         iterset.to_arg(), x(op2.WRITE, iterset2indset))
+        pl.compute(iterset, x)
         assert all(map(lambda x: x == 42, x.data))
 
     def test_onecolor_rw(self, iterset, x, iterset2indset):
