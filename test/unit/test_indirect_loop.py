@@ -146,16 +146,18 @@ class TestIndirectLoop:
         """Increment each value of a Dat by one with op2.RW."""
         kernel_rw = "static void rw(unsigned int* x) { (*x) = (*x) + 1; }\n"
 
-        op2.par_loop(op2.Kernel(kernel_rw, "rw"),
-                     iterset, x(op2.RW, iterset2indset))
+        pl = op2.ParLoop(op2.Kernel(kernel_rw, "rw"),
+                     iterset.to_arg(), x(op2.RW, iterset2indset))
+        pl.compute(iterset, x)
         assert sum(x.data) == nelems * (nelems + 1) // 2
 
     def test_indirect_inc(self, iterset, unitset, iterset2unitset):
         """Sum into a scalar Dat with op2.INC."""
         u = op2.Dat(unitset, np.array([0], dtype=np.uint32), np.uint32, "u")
         kernel_inc = "static void inc(unsigned int* x) { (*x) = (*x) + 1; }\n"
-        op2.par_loop(op2.Kernel(kernel_inc, "inc"),
-                     iterset, u(op2.INC, iterset2unitset))
+        pl = op2.ParLoop(op2.Kernel(kernel_inc, "inc"),
+                         iterset.to_arg(), u(op2.INC, iterset2unitset))
+        pl.compute(iterset, u)
         assert u.data[0] == nelems
 
     def test_indirect_max(self, iterset, indset, iterset2indset):
@@ -262,9 +264,10 @@ class TestMixedIndirectLoop:
         kernel_inc = """static void inc(double *d, double *x) {
           d[0] += x[0]; d[1] += x[0];
         }"""
-        op2.par_loop(op2.Kernel(kernel_inc, "inc"), iterset,
-                     mdat(op2.INC, mmap),
-                     d(op2.READ))
+        pl = op2.ParLoop(op2.Kernel(kernel_inc, "inc"), iterset.to_arg(),
+                         mdat(op2.INC, mmap),
+                         d(op2.READ))
+        pl.compute(iterset, mdat, d)
         assert all(mdat[0].data == 1.0) and mdat[1].data == 4096.0
 
     def test_mixed_non_mixed_dat_itspace(self, mdat, mmap, iterset):

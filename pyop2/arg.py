@@ -12,7 +12,7 @@ class Arg(ABC):
         Instead, use the call syntax on the :class:`DataCarrier`.
     """
 
-    def __init__(self, argtypes, access, dtype, map_=None):
+    def __init__(self, argtypes, access, dtype, map_=None, unroll_map=False):
         """
         :param data: A data-carrying object, either :class:`Dat` or class:`Mat`
         :param map:  A :class:`Map` to access this :class:`Arg` or the default
@@ -46,6 +46,7 @@ class Arg(ABC):
         if dtype.kind == "c" and (access == MIN or access == MAX):
             raise ValueError("MIN and MAX access descriptors are undefined on complex data.")
         self._access = access
+        self.unroll_map = unroll_map
 
         # Check arguments for consistency
         # if configuration["type_check"] and not (self._is_global or map is None):
@@ -163,7 +164,7 @@ class GlobalArg(Arg):
 
 class MatArg(Arg):
 
-    def __init__(self, *args, dims, lgmaps, unroll_map, **kwargs):
+    def __init__(self, *args, dims, lgmaps, **kwargs):
         super().__init__(*args, **kwargs)
 
         if lgmaps is not None:
@@ -172,7 +173,6 @@ class MatArg(Arg):
 
         self._dims = dims
         self._lgmaps = lgmaps
-        self._unroll_map = unroll_map
 
 
 class MixedArg(ABC):

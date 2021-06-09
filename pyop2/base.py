@@ -3490,6 +3490,13 @@ class ParLoop(object):
 
     @collective
     def _compute(self, part, fun, iterset, *arglist):
+        """Executes the kernel over all members of a MPI-part of the iteration space.
+
+        :arg part: The :class:`SetPartition` to compute over
+        :arg fun: The :class:`JITModule` encapsulating the compiled
+             code (may be ignored by the backend).
+        :arg arglist: The arguments to pass to the compiled code (may
+             be ignored by the backend, depending on the exact implementation)"""
         with self._compute_event(fun, iterset):
             self.log_flops(part.size * self.num_flops(iterset))
             fun(part.offset, part.offset + part.size, *arglist)
@@ -3591,22 +3598,11 @@ class ParLoop(object):
             self.local_to_global_begin(runtime_args)
             self.update_arg_data_state(runtime_args)
             for arg in reversed(self.args):
-                if arg._is_mat and arg.lgmaps is not None:
+                if isinstance(arg, MatArg) and arg.lgmaps is not None:
                     for m, lgmaps in zip(arg.data, orig_lgmaps.pop()):
                         m.handle.setLGMap(*lgmaps)
             self.reduction_end(runtime_args, reduced_globals)
             self.local_to_global_end(runtime_args)
-
-    @collective
-    def _compute(self, part, fun, iterset, *arglist):
-        """Executes the kernel over all members of a MPI-part of the iteration space.
-
-        :arg part: The :class:`SetPartition` to compute over
-        :arg fun: The :class:`JITModule` encapsulating the compiled
-             code (may be ignored by the backend).
-        :arg arglist: The arguments to pass to the compiled code (may
-             be ignored by the backend, depending on the exact implementation)"""
-        raise RuntimeError("Must select a backend")
 
     @collective
     def global_to_local_begin(self, runtime_args):
@@ -3673,9 +3669,9 @@ class ParLoop(object):
             access = rt_arg.arg.access
             if access is READ:
                 continue
-            if rt_arg._is_dat:
-                data_obj.halo_valid = False
-            if rt_arg._is_mat:
+            if isinstance(rt_arg.arg, DatArg):
+                rt_arg.data.halo_valid = False
+            elif isinstance(rt_arg.arg, MatArg):
                 state = {WRITE: Mat.INSERT_VALUES,
                          INC: Mat.ADD_VALUES}[access]
                 rt_arg.data.assembly_state = state
