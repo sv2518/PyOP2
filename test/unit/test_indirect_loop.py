@@ -139,7 +139,7 @@ class TestIndirectLoop:
 
         pl = op2.ParLoop(op2.Kernel(kernel_wo, "kernel_wo"),
                          iterset.to_arg(), x(op2.WRITE, iterset2indset))
-        pl.compute(iterset, x)
+        pl(iterset, x)
         assert all(map(lambda x: x == 42, x.data))
 
     def test_onecolor_rw(self, iterset, x, iterset2indset):
@@ -148,7 +148,7 @@ class TestIndirectLoop:
 
         pl = op2.ParLoop(op2.Kernel(kernel_rw, "rw"),
                      iterset.to_arg(), x(op2.RW, iterset2indset))
-        pl.compute(iterset, x)
+        pl(iterset, x)
         assert sum(x.data) == nelems * (nelems + 1) // 2
 
     def test_indirect_inc(self, iterset, unitset, iterset2unitset):
@@ -157,7 +157,7 @@ class TestIndirectLoop:
         kernel_inc = "static void inc(unsigned int* x) { (*x) = (*x) + 1; }\n"
         pl = op2.ParLoop(op2.Kernel(kernel_inc, "inc"),
                          iterset.to_arg(), u(op2.INC, iterset2unitset))
-        pl.compute(iterset, u)
+        pl(iterset, u)
         assert u.data[0] == nelems
 
     def test_indirect_max(self, iterset, indset, iterset2indset):
@@ -166,8 +166,9 @@ class TestIndirectLoop:
         a.data[:] = -10
         b.data[:] = -5
         kernel = "static void maxify(int *a, int *b) {*a = *a < *b ? *b : *a;}\n"
-        op2.par_loop(op2.Kernel(kernel, "maxify"),
-                     iterset, a(op2.MAX, iterset2indset), b(op2.READ, iterset2indset))
+        pl = op2.ParLoop(op2.Kernel(kernel, "maxify"),
+                         iterset.to_arg(), a(op2.MAX, iterset2indset), b(op2.READ, iterset2indset))
+        pl(iterset, a, b)
         assert np.allclose(a.data_ro, -5)
 
     def test_indirect_min(self, iterset, indset, iterset2indset):
@@ -176,8 +177,9 @@ class TestIndirectLoop:
         a.data[:] = 10
         b.data[:] = 5
         kernel = "static void minify(int *a, int *b) {*a = *a > *b ? *b : *a;}\n"
-        op2.par_loop(op2.Kernel(kernel, "minify"),
-                     iterset, a(op2.MIN, iterset2indset), b(op2.READ, iterset2indset))
+        pl = op2.ParLoop(op2.Kernel(kernel, "minify"),
+                     iterset.to_arg(), a(op2.MIN, iterset2indset), b(op2.READ, iterset2indset))
+        pl(iterset, a, b)
         assert np.allclose(a.data_ro, 5)
 
     def test_global_read(self, iterset, x, iterset2indset):
