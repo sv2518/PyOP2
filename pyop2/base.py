@@ -3613,51 +3613,65 @@ class ParLoop(object):
             op(data_objs[idx])
 
     @cached_property
-    def _reduction_event_begin(self):
-        return timed_region("ParLoopRednBegin")
+    def _reduction_idxs(self):
+        return tuple(i for i, arg in enumerate(self._actual_args)
+                     if isinstance(arg, GlobalArg) and arg.access is not READ)
 
     @cached_property
-    def _reduction_event_end(self):
-        return timed_region("ParLoopRednEnd")
+    def _reduction_begin_ops(self):
+        ops = []
+        for idx in self._reduction_idxs:
+            mpi_op = {INC: MPI.SUM,
+                      MIN: MPI.MIN,
+                      MAX: MPI.MAX}.get(self._actual_args[idx].access)
+            if MPI.VERSION >= 3:
+                op = functools.partial(self._iterset_arg.comm.Iallreduce, op=mpi_op)
+            else:
+                op = functools.partial(self._iterset_arg.comm.Allreduce, op=mpi_op)
+            ops.append((idx, op))
+        return tuple(ops)
 
+
+    @PETSc.Log.EventDecorator("ParLoopRednBegin")
     @collective
     def reduction_begin(self, data_objs):
         """Begin reduction for the argument if its access is INC, MIN, or MAX.
         Doing a reduction only makes sense for :class:`Global` objects."""
-        with self._reduction_event_begin:
-            for arg, data_obj in zip(self._actual_args, data_objs):
-                if not isinstance(arg, GlobalArg):
-                    continue
-                if arg.access is not READ:
-                    if arg.access is INC:
-                        op = MPI.SUM
-                    elif arg.access is MIN:
-                        op = MPI.MIN
-                    elif arg.access is MAX:
-                        op = MPI.MAX
-                    if MPI.VERSION >= 3:
-                        return self._iterset_arg.comm.Iallreduce(data_obj._data, data_obj._buf, op=op)
-                    else:
-                        self._iterset_arg.comm.Allreduce(data_obj._data, data_obj._buf, op=op)
-                return None
+        requests = []
+        for idx, op in self._reduction_begin_ops:
+            data_obj = data_objs[idx]
+            requests.append(op(data_obj._data, data_obj._buf))
+        return tuple(requests)
 
+    @cached_property
+    def _reduction_end_ops(self):
+        def myop_mpi3(data_obj, request):
+            request.Wait()
+            data_obj._data[:] = data_obj._buf[:]
+
+        def myop2_mpi12(data_obj, request):
+            data_obj._data[:] = data_obj._buf[:]
+
+        ops = []
+        for idx in self._reduction_idxs:
+            if MPI.VERSION >= 3:
+                ops.append((idx, myop_mpi3)) 
+            else:
+                ops.append((idx, myop_mpi12)) 
+        return tuple(ops)
+
+    @PETSc.Log.EventDecorator("ParLoopRednEnd")
     @collective
-    def reduction_end(self, data_objs, reduced_globals, request):
+    def reduction_end(self, data_objs, reduced_globals, requests):
         """End reductions"""
         """End reduction for the argument if it is in flight.
         Doing a reduction only makes sense for :class:`Global` objects."""
-        with self._reduction_event_end:
-            for arg, data_obj in zip(self._actual_args, data_objs):
-                if not isinstance(arg, GlobalArg):
-                    continue
-                if arg.access is not READ:
-                    if MPI.VERSION >= 3:
-                        request.Wait()
-                    data_obj._data[:] = data_obj._buf[:]
+        for (idx, op), request in zip(self._reduction_end_ops, requests):
+            op(data_objs[idx], request)
 
-            # Finalise global increments
-            for tmp, glob in reduced_globals.items():
-                glob._data += tmp._data
+        # Finalise global increments
+        for tmp, glob in reduced_globals.items():
+            glob._data += tmp._data
 
     @collective
     def update_arg_data_state(self, data_objs):
