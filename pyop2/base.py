@@ -3560,32 +3560,57 @@ class ParLoop(object):
         for idx, op in self._g2l_begin_ops:
             op(data_objs[idx])
 
+    @cached_property
+    def _g2l_end_ops(self):
+        ops = []
+        for idx in self._g2l_idxs:
+            op = functools.partial(Dat.global_to_local_end,
+                                   access_mode=self._actual_args[idx].access)
+            ops.append((idx, op))
+        return tuple(ops)
+
     @collective
     def global_to_local_end(self, data_objs):
         """Finish halo exchanges"""
-        for arg, data_obj in zip(self._actual_args, data_objs):
-            if (isinstance(arg, DatArg)
-                    and arg.is_indirect
-                    and arg.access is not WRITE):
-                data_obj.global_to_local_end(arg.access)
+        for idx, op in self._g2l_end_ops:
+            op(data_objs[idx])
+
+    @cached_property
+    def _l2g_idxs(self):
+        return tuple(i for i, arg in enumerate(self._actual_args)
+                     if isinstance(arg, DatArg)
+                     and arg.is_indirect
+                     and arg.access in {INC, MIN, MAX})
+
+    @cached_property
+    def _l2g_begin_ops(self):
+        ops = []
+        for idx in self._l2g_idxs:
+            op = functools.partial(Dat.local_to_global_begin,
+                                   insert_mode=self._actual_args[idx].access)
+            ops.append((idx, op))
+        return tuple(ops)
 
     @collective
     def local_to_global_begin(self, data_objs):
         """Start halo exchanges."""
-        for arg, data_obj in zip(self._actual_args, data_objs):
-            if (isinstance(arg, DatArg)
-                    and arg.is_indirect
-                    and arg.access in {INC, MIN, MAX}):
-                data_obj.local_to_global_begin(arg.access)
+        for idx, op in self._l2g_begin_ops:
+            op(data_objs[idx])
+
+    @cached_property
+    def _l2g_end_ops(self):
+        ops = []
+        for idx in self._l2g_idxs:
+            op = functools.partial(Dat.local_to_global_end,
+                                   insert_mode=self._actual_args[idx].access)
+            ops.append((idx, op))
+        return tuple(ops)
 
     @collective
     def local_to_global_end(self, data_objs):
         """Finish halo exchanges (wait on irecvs)"""
-        for arg, data_obj in zip(self._actual_args, data_objs):
-            if (isinstance(arg, DatArg)
-                    and arg.is_indirect
-                    and arg.access in {INC, MIN, MAX}):
-                data_obj.local_to_global_end(arg.access)
+        for idx, op in self._l2g_end_ops:
+            op(data_objs[idx])
 
     @cached_property
     def _reduction_event_begin(self):
