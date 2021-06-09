@@ -3424,7 +3424,7 @@ class ParLoop(object):
         return timed_region("ParLoop_{0}_{1}".format(iterset.name, fun._wrapper_name))
 
     @collective
-    def _compute(self, part, fun, iterset, *arglist):
+    def _compute(self, part, iterset, *arglist):
         """Executes the kernel over all members of a MPI-part of the iteration space.
 
         :arg part: The :class:`SetPartition` to compute over
@@ -3432,9 +3432,9 @@ class ParLoop(object):
              code (may be ignored by the backend).
         :arg arglist: The arguments to pass to the compiled code (may
              be ignored by the backend, depending on the exact implementation)"""
-        with self._compute_event(fun, iterset):
+        with self._compute_event(self._jitmodule, iterset):
             self.log_flops(part.size * self.num_flops(iterset))
-            fun(part.offset, part.offset + part.size, *arglist)
+            self._jitmodule(part.offset, part.offset + part.size, *arglist)
 
     def num_flops(self, iterset):
         size = 1
@@ -3459,10 +3459,7 @@ class ParLoop(object):
                          pass_layer_arg=self._pass_layer_arg)
 
 
-    @cached_property
-    def _parloop_event(self):
-        return timed_region("ParLoopExecute")
-
+    @PETSc.Log.EventDecorator("ParLoopExecute")
     @collective
     def __call__(self, iterset, *data_objs):
         """Executes the kernel over all members of the iteration space."""
@@ -3497,47 +3494,41 @@ class ParLoop(object):
                 reduced_globals[tmp] = glob
                 rt_arg.data = tmp
 
+        orig_lgmaps = []
+        for rt_arg in runtime_args:
+            arg = rt_arg.arg; data = rt_arg.data
 
-        with self._parloop_event:
-            orig_lgmaps = []
-            for rt_arg in runtime_args:
-                arg = rt_arg.arg; data = rt_arg.data
-
-                if isinstance(arg, MatArg):
-                    new_state = {INC: Mat.ADD_VALUES,
-                                 WRITE: Mat.INSERT_VALUES}[arg.access]
-                    for m in data:
-                        m.change_assembly_state(new_state)
-                    data.change_assembly_state(new_state)
-                    # Boundary conditions applied to the matrix appear
-                    # as modified lgmaps on the Arg. We set them onto
-                    # the matrix so things are correctly dropped in
-                    # insertion, and then restore the original lgmaps
-                    # afterwards.
-                    if arg.lgmaps is not None:
-                        olgmaps = []
-                        for m, lgmaps in zip(rt_arg.data, rt_arg.arg.lgmaps):
-                            olgmaps.append(m.handle.getLGMap())
-                            m.handle.setLGMap(*lgmaps)
-                        orig_lgmaps.append(olgmaps)
-
-            self.global_to_local_begin(data_objs)
-            # The compilation process should occur here since it is not a part
-            # of the code generation (a compiled parloop is not composable).
-            fun = self._jitmodule
-
-            self._compute(iterset.core_part, fun, iterset, *arglist)
-            self.global_to_local_end(data_objs)
-            self._compute(iterset.owned_part, fun, iterset, *arglist)
-            requests = self.reduction_begin(data_objs)
-            self.local_to_global_begin(data_objs)
-            self.update_arg_data_state(data_objs)
-            for arg in reversed(self.args):
-                if isinstance(arg, MatArg) and arg.lgmaps is not None:
-                    for m, lgmaps in zip(arg.data, orig_lgmaps.pop()):
+            if isinstance(arg, MatArg):
+                new_state = {INC: Mat.ADD_VALUES,
+                             WRITE: Mat.INSERT_VALUES}[arg.access]
+                for m in data:
+                    m.change_assembly_state(new_state)
+                data.change_assembly_state(new_state)
+                # Boundary conditions applied to the matrix appear
+                # as modified lgmaps on the Arg. We set them onto
+                # the matrix so things are correctly dropped in
+                # insertion, and then restore the original lgmaps
+                # afterwards.
+                if arg.lgmaps is not None:
+                    olgmaps = []
+                    for m, lgmaps in zip(rt_arg.data, rt_arg.arg.lgmaps):
+                        olgmaps.append(m.handle.getLGMap())
                         m.handle.setLGMap(*lgmaps)
-            self.reduction_end(data_objs, reduced_globals, requests)
-            self.local_to_global_end(data_objs)
+                    orig_lgmaps.append(olgmaps)
+
+        self.global_to_local_begin(data_objs)
+        self._compute(iterset.core_part, iterset, *arglist)
+        self.global_to_local_end(data_objs)
+        self._compute(iterset.owned_part, iterset, *arglist)
+        requests = self.reduction_begin(data_objs)
+        self.local_to_global_begin(data_objs)
+        self.update_arg_data_state(data_objs)
+        for arg in reversed(self.args):
+            if isinstance(arg, MatArg) and arg.lgmaps is not None:
+                for m, lgmaps in zip(arg.data, orig_lgmaps.pop()):
+                    m.handle.setLGMap(*lgmaps)
+        self.reduction_end(data_objs, reduced_globals, requests)
+        self.local_to_global_end(data_objs)
 
     @cached_property
     def _g2l_begin_ops(self):
@@ -3688,20 +3679,6 @@ class ParLoop(object):
                 state = {WRITE: Mat.INSERT_VALUES,
                          INC: Mat.ADD_VALUES}[arg.access]
                 data_obj.assembly_state = state
-
-    @cached_property
-    def dat_args(self):
-        return tuple(arg for arg in self._args if isinstance(arg, DatArg))
-
-    @cached_property
-    def unique_dat_args(self):
-        return tuple(set(self.dat_args))
-
-    @cached_property
-    def global_reductions(self, runtime_args):
-        return tuple(rt_arg.data for rt_arg in runtime_args
-                     if isinstance(rt_arg.data, Global)
-                     and rt_arg.arg.access in {INC, MIN, MAX})
 
     @cached_property
     def kernel(self):
