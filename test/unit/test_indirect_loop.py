@@ -149,8 +149,8 @@ class TestIndirectLoop:
         kernel_rw = "static void rw(unsigned int* x) { (*x) = (*x) + 1; }\n"
 
         pl = op2.ParLoop(op2.Kernel(kernel_rw, "rw"),
-                     iterset.to_arg(), x(op2.RW, iterset2indset))
-        pl(iterset, x)
+                     iterset.to_arg(), x(op2.RW, iterset2indset()))
+        pl(iterset, x, iterset2indset)
         assert sum(x.data) == nelems * (nelems + 1) // 2
 
     def test_indirect_inc(self, iterset, unitset, iterset2unitset):
