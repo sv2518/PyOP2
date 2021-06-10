@@ -1,9 +1,19 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 
 from pyop2.caching import cached_property  
 
 
 class Arg(ABC):
+
+    def __init__(self, comm):
+        self._comm = comm
+
+    @property
+    def comm(self):
+        return self._comm
+
+
+class DataCarrierArg(Arg, ABC):
 
     """An argument to a :func:`pyop2.op2.par_loop`.
 
@@ -12,7 +22,7 @@ class Arg(ABC):
         Instead, use the call syntax on the :class:`DataCarrier`.
     """
 
-    def __init__(self, argtypes, access, dtype, map_=None, unroll_map=False):
+    def __init__(self, comm, access, dtype, map_=None, unroll_map=False):
         """
         :param data: A data-carrying object, either :class:`Dat` or class:`Mat`
         :param map:  A :class:`Map` to access this :class:`Arg` or the default
@@ -32,13 +42,13 @@ class Arg(ABC):
         # TODO: Remove this circular import
         from pyop2.base import Map
 
-        self._argtypes_ = argtypes
+        super().__init__(comm)
 
         self._dtype = dtype
         self._map = map_
         if map_ is None:
             self.map_tuple = ()
-        elif isinstance(map_, Map):
+        elif isinstance(map_, MapArg):
             self.map_tuple = (map_, )
         else:
             self.map_tuple = tuple(map_)
@@ -114,7 +124,7 @@ class Arg(ABC):
         return self._access
 
 
-class DatArg(Arg):
+class DatArg(DataCarrierArg):
 
     def __init__(self, *args, shape, **kwargs):
         super().__init__(*args, **kwargs)
@@ -133,10 +143,6 @@ class DatArg(Arg):
     def is_indirect(self):
         return self._map is not None
 
-    @property
-    def is_dat_view(self):
-        return issubclass(self.data_class, DatView)
-
 
 class DatViewArg(DatArg):
 
@@ -149,7 +155,7 @@ class DatViewArg(DatArg):
         return self._index
 
 
-class GlobalArg(Arg):
+class GlobalArg(DataCarrierArg):
 
     def __init__(self, *args, dim, **kwargs):
         super().__init__(*args, **kwargs)
@@ -157,12 +163,16 @@ class GlobalArg(Arg):
         self._dim = dim
 
     @property
+    def dim(self):
+        return self._dim
+
+    @property
     def is_reduction(self):
         return self._access in {INC, MIN, MAX}
 
 
 
-class MatArg(Arg):
+class MatArg(DataCarrierArg):
 
     def __init__(self, *args, dims, lgmaps, **kwargs):
         super().__init__(*args, **kwargs)
@@ -173,6 +183,30 @@ class MatArg(Arg):
 
         self._dims = dims
         self._lgmaps = lgmaps
+
+
+class MapArg(Arg):
+
+    def __init__(self, arity, comm, extruded, constant_layers, offset, shape, dtype):
+        super().__init__(comm)
+        self._arity = arity
+        self._extruded = extruded
+        self._constant_layers = constant_layers
+        self.offset = offset
+        self.shape = shape
+        self.dtype=dtype
+
+    @property
+    def arity(self):
+        return self._arity
+
+    @property
+    def extruded(self):
+        return self._extruded
+
+    @property
+    def constant_layers(self):
+        return self._constant_layers
 
 
 class MixedArg(ABC):
@@ -216,5 +250,14 @@ class MixedMatArg(MixedArg):
     #                               access=self._access)
                      # for i in range(rows) for j in range(cols))
 
+
+class SetArg(Arg):
+
+    def __init__(self, *args, constant_layers=False, extruded=False, subset=False):
+        super().__init__(*args)
+
+        self.constant_layers = constant_layers
+        self.extruded = extruded
+        self.subset = subset
 
 

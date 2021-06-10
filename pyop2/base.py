@@ -48,10 +48,10 @@ import types
 from hashlib import md5
 import functools
 
-from pyop2.arg import DatArg, GlobalArg, MatArg, MixedDatArg, MixedMatArg
+from pyop2.arg import DatArg, GlobalArg, MatArg, MapArg, MixedDatArg, MixedMatArg, SetArg
 from pyop2.datatypes import IntType, as_cstr, dtype_limits, ScalarType, as_ctypes
 from pyop2.configuration import configuration
-from pyop2.caching import Cached, ObjectCached
+from pyop2.caching import Cached
 from pyop2.exceptions import *
 from pyop2.utils import *
 from pyop2.mpi import MPI, collective, dup_comm
@@ -120,15 +120,7 @@ class RuntimeArg:
 
 
 
-class SymbolicSet:
-    def __init__(self, argtypes, comm, constant_layers=False, extruded=False, subset=False):
-        self._argtypes_ = argtypes
-        self.constant_layers = constant_layers
-        self.extruded = extruded
-        self.subset = subset
-        self.comm = comm
-
-class Set(object):
+class Set:
 
     """OP2 set.
 
@@ -193,7 +185,7 @@ class Set(object):
         self._cache = {}
 
     def to_arg(self):
-        return SymbolicSet(self._argtypes_, self.comm)
+        return SetArg(self.comm)
 
     @cached_property
     def core_size(self):
@@ -411,7 +403,7 @@ class ExtrudedSet(Set):
         self._extruded = True
 
     def to_arg(self):
-        return SymbolicSet(self._argtypes_, self.comm, constant_layers=self.constant_layers, extruded=True)
+        return SetArg(self.comm, constant_layers=self.constant_layers, extruded=True)
 
     @cached_property
     def _kernel_args_(self):
@@ -425,11 +417,11 @@ class ExtrudedSet(Set):
     def _wrapper_cache_key_(self):
         return self.parent._wrapper_cache_key_ + (self.constant_layers, )
 
-    def __getattr__(self, name):
-        """Returns a :class:`Set` specific attribute."""
-        value = getattr(self._parent, name)
-        setattr(self, name, value)
-        return value
+    # def __getattr__(self, name):
+    #     """Returns a :class:`Set` specific attribute."""
+    #     value = getattr(self._parent, name)
+    #     setattr(self, name, value)
+    #     return value
 
     def __contains__(self, set):
         return set is self.parent
@@ -495,7 +487,7 @@ class Subset(ExtrudedSet):
         self._extruded = superset._extruded
 
     def to_arg(self):
-        return SymbolicSet(self._argtypes_, self.comm, subset=True)
+        return SetArg(self.comm, subset=True)
 
     @cached_property
     def _kernel_args_(self):
@@ -506,11 +498,11 @@ class Subset(ExtrudedSet):
         return self._superset._argtypes_ + (ctypes.c_voidp, )
 
     # Look up any unspecified attributes on the _set.
-    def __getattr__(self, name):
-        """Returns a :class:`Set` specific attribute."""
-        value = getattr(self._superset, name)
-        setattr(self, name, value)
-        return value
+    # def __getattr__(self, name):
+    #     """Returns a :class:`Set` specific attribute."""
+    #     value = getattr(self._superset, name)
+    #     setattr(self, name, value)
+    #     return value
 
     def __pow__(self, e):
         """Derive a :class:`DataSet` with dimension ``e``"""
@@ -561,19 +553,16 @@ class SetPartition(object):
         self.size = size
 
 
-class MixedSet(ObjectCached):
+class MixedSet:
     r"""A container for a bag of :class:`Set`\s."""
 
     def __init__(self, sets):
         r""":param iterable sets: Iterable of :class:`Set`\s or :class:`ExtrudedSet`\s"""
-        if self._initialized:
-            return
         self._sets = sets
         assert all(s is None or isinstance(s, GlobalSet) or ((s.layers == self._sets[0].layers).all() if s.layers is not None else True) for s in sets), \
             "All components of a MixedSet must have the same number of layers."
         # TODO: do all sets need the same communicator?
         self.comm = reduce(lambda a, b: a or b, map(lambda s: s if s is None else s.comm, sets))
-        self._initialized = True
 
     @cached_property
     def _kernel_args_(self):
@@ -673,7 +662,7 @@ class MixedSet(ObjectCached):
         return type(self) == type(other) and self._sets == other._sets
 
 
-class DataSet(ObjectCached):
+class DataSet:
     """PyOP2 Data Set
 
     Set used in the op2.Dat structures to specify the dimension of the data.
@@ -685,15 +674,12 @@ class DataSet(ObjectCached):
     def __init__(self, iter_set, dim=1, name=None):
         if isinstance(iter_set, ExtrudedSet):
             raise NotImplementedError("Not allowed!")
-        if self._initialized:
-            return
         if isinstance(iter_set, Subset):
             raise NotImplementedError("Deriving a DataSet from a Subset is unsupported")
         self._set = iter_set
         self._dim = as_tuple(dim, numbers.Integral)
         self._cdim = np.prod(self._dim).item()
         self._name = name or "dset_#x%x" % id(self)
-        self._initialized = True
 
     @classmethod
     def _process_args(cls, *args, **kwargs):
@@ -716,16 +702,16 @@ class DataSet(ObjectCached):
         self.__dict__.update(d)
 
     # Look up any unspecified attributes on the _set.
-    def __getattr__(self, name):
-        """Returns a Set specific attribute."""
-        value = getattr(self.set, name)
-        setattr(self, name, value)
-        return value
+    # def __getattr__(self, name):
+    #     """Returns a Set specific attribute."""
+    #     value = getattr(self.set, name)
+    #     setattr(self, name, value)
+    #     return value
 
-    def __getitem__(self, idx):
-        """Allow index to return self"""
-        assert idx == 0
-        return self
+    # def __getitem__(self, idx):
+    #     """Allow index to return self"""
+    #     assert idx == 0
+    #     return self
 
     @cached_property
     def dim(self):
@@ -831,7 +817,7 @@ class GlobalDataSet(DataSet):
         return "GlobalDataSet(%r)" % (self._global)
 
 
-class MixedDataSet(ObjectCached):
+class MixedDataSet:
     r"""A container for a bag of :class:`DataSet`\s.
 
     Initialized either from a :class:`MixedSet` and an iterable or iterator of
@@ -875,10 +861,7 @@ class MixedDataSet(ObjectCached):
             When using generator expressions for ``arg`` or ``dims``, these
             **must** terminate or else will cause an infinite loop.
         """
-        if self._initialized:
-            return
         self._dsets = arg
-        self._initialized = True
 
     @classmethod
     def _process_args(cls, arg, dims=None):
@@ -910,9 +893,9 @@ class MixedDataSet(ObjectCached):
     def _wrapper_cache_key_(self):
         raise NotImplementedError
 
-    def __getitem__(self, idx):
-        """Return :class:`DataSet` with index ``idx`` or a given slice of datasets."""
-        return self._dsets[idx]
+    # def __getitem__(self, idx):
+    #     """Return :class:`DataSet` with index ``idx`` or a given slice of datasets."""
+    #     return self._dsets[idx]
 
     @cached_property
     def split(self):
@@ -1012,7 +995,7 @@ class Halo(object, metaclass=abc.ABCMeta):
         pass
 
 
-class DataCarrier(object):
+class DataCarrier:
 
     """Abstract base class for OP2 data.
 
@@ -1122,7 +1105,6 @@ class Dat(DataCarrier, _EmptyDataMixin):
                    ('name', str, NameTypeError))
     @validate_dtype(('dtype', None, DataTypeError))
     def __init__(self, dataset, data=None, dtype=None, name=None):
-
         if isinstance(dataset, Dat):
             self.__init__(dataset.dataset, None, dtype=dataset.dtype,
                           name="copy_of_%s" % dataset.name)
@@ -1132,11 +1114,11 @@ class Dat(DataCarrier, _EmptyDataMixin):
             # If a Set, rather than a dataset is passed in, default to
             # a dataset dimension of 1.
             dataset = dataset ** 1
-        self._shape = (dataset.total_size,) + (() if dataset.cdim == 1 else dataset.dim)
+        self._shape = (dataset.set.total_size,) + (() if dataset.cdim == 1 else dataset.dim)
         _EmptyDataMixin.__init__(self, data, dtype, self._shape)
 
         self._dataset = dataset
-        self.comm = dataset.comm
+        self.comm = dataset.set.comm
         self.halo_valid = True
         self._name = name or "dat_#x%x" % id(self)
 
@@ -1154,9 +1136,9 @@ class Dat(DataCarrier, _EmptyDataMixin):
 
     @validate_in(('access', _modes, ModeValueError))
     def __call__(self, access, path=None):
-        if configuration["type_check"] and path and path.toset != self.dataset.set:
-            raise MapValueError("To Set of Map does not match Set of Dat.")
-        return DatArg(self._argtypes_, access, self.dtype, path, shape=self.shape)
+        # if configuration["type_check"] and path and path.toset != self.dataset.set:
+        #     raise MapValueError("To Set of Map does not match Set of Dat.")
+        return DatArg(self.comm, access, self.dtype, path, shape=self.shape)
 
     def __getitem__(self, idx):
         """Return self if ``idx`` is 0, raise an error otherwise."""
@@ -1198,10 +1180,10 @@ class Dat(DataCarrier, _EmptyDataMixin):
         :meth:`data_with_halos`.
 
         """
-        if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
+        if self.dataset.set.total_size > 0 and self._data.size == 0 and self.cdim > 0:
             raise RuntimeError("Illegal access: no data associated with this Dat!")
         self.halo_valid = False
-        v = self._data[:self.dataset.size].view()
+        v = self._data[:self.dataset.set.size].view()
         v.setflags(write=True)
         return v
 
@@ -1235,9 +1217,9 @@ class Dat(DataCarrier, _EmptyDataMixin):
         :meth:`data_ro_with_halos`.
 
         """
-        if self.dataset.total_size > 0 and self._data.size == 0 and self.cdim > 0:
+        if self.dataset.set.total_size > 0 and self._data.size == 0 and self.cdim > 0:
             raise RuntimeError("Illegal access: no data associated with this Dat!")
-        v = self._data[:self.dataset.size].view()
+        v = self._data[:self.dataset.set.size].view()
         v.setflags(write=False)
         return v
 
@@ -1301,7 +1283,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
         over all MPI processes.
         """
 
-        return self.dtype.itemsize * self.dataset.total_size * self.dataset.cdim
+        return self.dtype.itemsize * self.dataset.set.total_size * self.dataset.cdim
 
     @collective
     def zero(self, subset=None):
@@ -1621,7 +1603,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
 
         :kwarg access_mode: Mode with which the data will subsequently
            be accessed."""
-        halo = self.dataset.halo
+        halo = self.dataset.set.halo
         if halo is None:
             return
         if not self.halo_valid and access_mode in {READ, RW}:
@@ -1629,7 +1611,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
         elif access_mode in {INC, MIN, MAX}:
             min_, max_ = dtype_limits(self.dtype)
             val = {MAX: min_, MIN: max_, INC: 0}[access_mode]
-            self._data[self.dataset.size:] = val
+            self._data[self.dataset.set.size:] = val
         else:
             # WRITE
             pass
@@ -1640,7 +1622,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
 
         :kwarg access_mode: Mode with which the data will subsequently
            be accessed."""
-        halo = self.dataset.halo
+        halo = self.dataset.set.halo
         if halo is None:
             return
         if not self.halo_valid and access_mode in {READ, RW}:
@@ -1657,7 +1639,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
         """Begin a halo exchange from ghosted to global representation.
 
         :kwarg insert_mode: insertion mode (an access descriptor)"""
-        halo = self.dataset.halo
+        halo = self.dataset.set.halo
         if halo is None:
             return
         halo.local_to_global_begin(self, insert_mode)
@@ -1667,7 +1649,7 @@ class Dat(DataCarrier, _EmptyDataMixin):
         """End a halo exchange from ghosted to global representation.
 
         :kwarg insert_mode: insertion mode (an access descriptor)"""
-        halo = self.dataset.halo
+        halo = self.dataset.set.halo
         if halo is None:
             return
         halo.local_to_global_end(self, insert_mode)
@@ -1701,6 +1683,7 @@ class DatView(Dat):
         if configuration["type_check"] and path and path.toset != self.dataset.set:
             raise MapValueError("To Set of Map does not match Set of Dat.")
         return DatViewArg(argtypes=self._argtypes_,
+                comm=self.comm,
                             dtype=self.dtype,
                             shape=self._parent.shape,
                             index=self.index,
@@ -1729,7 +1712,7 @@ class DatView(Dat):
 
     @cached_property
     def shape(self):
-        return (self.dataset.total_size, )
+        return (self.dataset.set.total_size, )
 
     @property
     def data(self):
@@ -2093,7 +2076,7 @@ class Global(DataCarrier, _EmptyDataMixin):
 
     @validate_in(('access', _modes, ModeValueError))
     def __call__(self, access, path=None):
-        return GlobalArg(self._argtypes_, access, self._dtype, path)
+        return GlobalArg(self.comm, access, self._dtype, path, dim=self._dim)
 
     def __iter__(self):
         """Yield self when iterated over."""
@@ -2321,9 +2304,15 @@ class Map(object):
     def _kernel_args_(self):
         return (self._values.ctypes.data, )
 
-    @cached_property
-    def _argtypes_(self):
-        return (ctypes.c_voidp, )
+    def __call__(self):
+        return MapArg(arity=self._arity,
+                      comm=self.comm,
+                      extruded=isinstance(self._iterset, ExtrudedSet),
+                      constant_layers=isinstance(self._iterset, ExtrudedSet) and self._iterset.constant_layers,
+                      offset=self.offset,
+                      shape=self.shape,
+                      dtype=self.dtype)
+
 
     @cached_property
     def _wrapper_cache_key_(self):
@@ -2413,13 +2402,11 @@ class Map(object):
         return self == o
 
 
-class MixedMap(ObjectCached):
+class MixedMap:
     r"""A container for a bag of :class:`Map`\s."""
 
     def __init__(self, maps):
         r""":param iterable maps: Iterable of :class:`Map`\s"""
-        if self._initialized:
-            return
         self._maps = maps
         if not all(m is None or m.iterset == self.iterset for m in self._maps):
             raise MapTypeError("All maps in a MixedMap need to share the same iterset")
@@ -2431,7 +2418,6 @@ class MixedMap(ObjectCached):
         if len(comms) == 0:
             raise MapTypeError("Don't know how to make communicator")
         self.comm = comms[0]
-        self._initialized = True
 
     @classmethod
     def _process_args(cls, *args, **kwargs):
@@ -2538,7 +2524,7 @@ class MixedMap(ObjectCached):
         return "MixedMap(%r)" % (self._maps,)
 
 
-class Sparsity(ObjectCached):
+class Sparsity:
 
     """OP2 Sparsity, the non-zero structure a matrix derived from the union of
     the outer product of pairs of :class:`Map` objects.
@@ -2569,9 +2555,6 @@ class Sparsity(ObjectCached):
             cdim > 1 be built as a block sparsity?
         """
         # Protect against re-initialization when retrieved from cache
-        if self._initialized:
-            return
-
         self._block_sparse = block_sparse
         # Split into a list of row maps and a list of column maps
         maps, iteration_regions = zip(*maps)
@@ -2645,7 +2628,6 @@ class Sparsity(ObjectCached):
                 self._d_nnz = nnz
                 self._o_nnz = onnz
             self._blocks = [[self]]
-        self._initialized = True
 
     _cache = {}
 
@@ -2911,7 +2893,7 @@ class Mat(DataCarrier):
         path_maps = as_tuple(path, Map, 2)
         if configuration["type_check"] and tuple(path_maps) not in self.sparsity:
             raise MapValueError("Path maps not in sparsity maps")
-        return MatArg(self._argtypes_, access, self.dtype, path_maps, dims=self.dims, lgmaps=lgmaps, unroll_map=unroll_map)
+        return MatArg(self.comm, access, self.dtype, path_maps, dims=self.dims, lgmaps=lgmaps, unroll_map=unroll_map)
 
     @cached_property
     def _wrapper_cache_key_(self):
@@ -3142,8 +3124,6 @@ class Kernel(Cached):
     def __init__(self, code, name, opts={}, include_dirs=[], headers=[],
                  user_code="", ldargs=None, cpp=False, requires_zeroed_output_arguments=False):
         # Protect against re-initialization when retrieved from cache
-        if self._initialized:
-            return
         self._name = name
         self._cpp = cpp
         # Record used optimisations
@@ -3154,7 +3134,6 @@ class Kernel(Cached):
         self._user_code = user_code
         assert isinstance(code, (str, Node, loopy.Program, loopy.LoopKernel, loopy.TranslationUnit))
         self._code = code
-        self._initialized = True
         self.requires_zeroed_output_arguments = requires_zeroed_output_arguments
 
     @property
@@ -3281,6 +3260,8 @@ class JITModule(Cached):
         wrapper = generate(builder)
         code = loopy.generate_code_v2(wrapper)
 
+        self.builder = builder
+
         if self._kernel._cpp:
             from loopy.codegen.result import process_preambles
             preamble = "".join(process_preambles(getattr(code, "device_preambles", [])))
@@ -3309,7 +3290,6 @@ class JITModule(Cached):
                                      self._wrapper_name,
                                      cppargs=cppargs,
                                      ldargs=ldargs,
-                                     argtypes=self.argtypes,
                                      restype=ctypes.c_int,
                                      compiler=compiler,
                                      comm=self.comm)
@@ -3317,20 +3297,12 @@ class JITModule(Cached):
     @cached_property
     def argtypes(self):
         index_type = as_ctypes(IntType)
-        argtypes = (index_type, index_type)
-        argtypes += self._iterset_arg._argtypes_
-        for arg in self._args:
-            argtypes += arg._argtypes_
-        seen = set()
-        for arg in self._args:
-            maps = arg.map_tuple
-            for map_ in maps:
-                for k, t in zip(map_._kernel_args_, map_._argtypes_):
-                    if k in seen:
-                        continue
-                    argtypes += (t,)
-                    seen.add(k)
-        return argtypes
+        argtypes = [index_type, index_type]
+        # All arguments apart from the first are treated as a void pointer in ctypes
+        # TODO improve logic for dealing with this
+        for _ in self.builder.wrapper_args[2:]:
+            argtypes.append(ctypes.c_voidp)
+        return tuple(argtypes)
 
 
 class IterationRegion(IntEnum):
@@ -3372,6 +3344,7 @@ class ParLoop(object):
     def __init__(self, kernel, iterset_arg, *args, **kwargs):
         # Always use the current arguments, also when we hit cache
         self._actual_args = args
+
         self._kernel = kernel
         self._is_layered = iterset_arg.extruded
         self._iteration_region = kwargs.get("iterate", None)
@@ -3398,26 +3371,15 @@ class ParLoop(object):
         #                 arg2.indirect_position = arg1.indirect_position
 
 
-    def prepare_arglist(self, iterset, runtime_args):
+    def prepare_arglist(self, iterset, data_objs):
         """Prepare the argument list for calling generated code.
 
         :arg iterset: The :class:`Set` iterated over.
         :arg args: A list of :class:`Args`, the argument to the :fn:`par_loop`.
         """
         arglist = iterset._kernel_args_
-        for arg in runtime_args:
-            arglist += arg.data._kernel_args_
-        seen = set()
-        for arg in runtime_args:
-            maps = arg.arg.map_tuple
-            for map_ in maps:
-                if map_ is None:
-                    continue
-                for k in map_._kernel_args_:
-                    if k in seen:
-                        continue
-                    arglist += (k,)
-                    seen.add(k)
+        for data_obj in data_objs:
+            arglist += data_obj._kernel_args_
         return arglist
 
     def _compute_event(self, fun, iterset):
@@ -3469,7 +3431,7 @@ class ParLoop(object):
 
         # TODO: Move as much of this to constructor
         # check_iterset(runtime_args, iterset)
-        arglist = self.prepare_arglist(iterset, runtime_args)
+        arglist = self.prepare_arglist(iterset, data_objs)
 
         seen = {}
         for arg, data_obj in zip(self.args, data_objs):

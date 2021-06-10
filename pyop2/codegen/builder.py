@@ -35,7 +35,7 @@ class Map(object):
 
     def __init__(self, map_, interior_horizontal, layer_bounds,
                  values=None, offset=None, unroll=False):
-        self.variable = map_.iterset._extruded and not map_.iterset.constant_layers
+        self.variable = map_.extruded and not map_.constant_layers
         self.unroll = unroll
         self.layer_bounds = layer_bounds
         self.interior_horizontal = interior_horizontal
