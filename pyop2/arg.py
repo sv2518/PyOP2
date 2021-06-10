@@ -202,8 +202,10 @@ class MapArg(Arg):
 
 class MixedArg(ABC):
     
-    def __init__(self, args):
+    def __init__(self, args, access, dtype):
         self._args = args
+        self.access = access
+        self.dtype = dtype
 
     # def __iter__(self):
     #     return self
@@ -226,21 +228,15 @@ class MixedArg(ABC):
 
 class MixedDatArg(MixedArg):
 
-    def __init__(self, args):
-        if not all(isinstance(arg, DatArg) for arg in args):
-            raise ValueError
-
-        super().__init__(args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 
 class MixedMatArg(MixedArg):
 
-    def __init__(self, args, *, shape):
-        if not all(isinstance(arg, DatArg) for arg in args):
-            raise ValueError
-
-        super().__init__(args)
-        self._shape = shape
+    def __init__(self, *args, shape):
+        super().__init__(*args)
+        self.shape = shape
 
     # def split(self):
     #     rows, cols = self.shape
@@ -249,8 +245,9 @@ class MixedMatArg(MixedArg):
     #                               access=self._access)
                      # for i in range(rows) for j in range(cols))
 
-class MixedMapArg(MixedArg):
-    ...
+class MixedMapArg:
+    def __init__(self, args):
+        self.args = args
 
 
 class SetArg(Arg):

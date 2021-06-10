@@ -1776,7 +1776,9 @@ class MixedDat:
         #     raise MapValueError("To Set of Map does not match Set of Dat.")
         assert isinstance(path, MixedMapArg)
 
-        return MixedDatArg([dat(access, path_) for dat, path_ in zip(self._dats, path)])
+        return MixedDatArg([dat(access, path_) for dat, path_ in zip(self._dats, path.args)],
+                           access=access,
+                           dtype=self.dtype)
 
     @cached_property
     def _kernel_args_(self):
@@ -2897,7 +2899,14 @@ class Mat(DataCarrier):
         path_maps = as_tuple(path, Map, 2)
         if configuration["type_check"] and tuple(path_maps) not in self.sparsity:
             raise MapValueError("Path maps not in sparsity maps")
-        return MatArg(self.comm, access, self.dtype, path_maps, dims=self.dims, lgmaps=lgmaps, unroll_map=unroll_map)
+
+        if self.is_mixed:
+            return MixedMatArg([m(access, path, lgmaps, unroll_map) for m in self],
+                               access=access,
+                               dtype=self.dtype,
+                               shape=self.shape)
+        else:
+            return MatArg(self.comm, access, self.dtype, path_maps, dims=self.dims, lgmaps=lgmaps, unroll_map=unroll_map)
 
     @cached_property
     def _wrapper_cache_key_(self):
@@ -3051,11 +3060,6 @@ class Mat(DataCarrier):
     def __repr__(self):
         return "Mat(%r, %r, %r)" \
                % (self._sparsity, self._datatype, self._name)
-
-
-class MixedMat:
-    def __call__(self, access, path=None):
-        return MixedMatArg((mat(access, path) for mat in self._mats), shape=self.sparsity.shape)
 
 
 # Kernel API
