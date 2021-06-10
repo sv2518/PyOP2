@@ -39,19 +39,10 @@ class DataCarrierArg(Arg, ABC):
 
         A :class:`MapValueError` is raised if these conditions are not met."""
 
-        # TODO: Remove this circular import
-        from pyop2.base import Map
-
         super().__init__(comm)
 
         self._dtype = dtype
         self._map = map_
-        if map_ is None:
-            self.map_tuple = ()
-        elif isinstance(map_, MapArg):
-            self.map_tuple = (map_, )
-        else:
-            self.map_tuple = tuple(map_)
 
         if dtype.kind == "c" and (access == MIN or access == MAX):
             raise ValueError("MIN and MAX access descriptors are undefined on complex data.")

@@ -774,7 +774,7 @@ class WrapperBuilder(object):
             for a in arg:
                 argument = Argument((), PetscMat(), pfx="mat")
                 map_ = tuple(self.map_(m, unroll=arg.unroll_map) for m in a.map)
-                packs.append(arg.pack(argument, a.access, map_,
+                packs.append(MatPack(argument, a.access, map_,
                                            a.dim, a.dtype,
                                            interior_horizontal=interior_horizontal))
                 self.arguments.append(argument)

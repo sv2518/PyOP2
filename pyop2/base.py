@@ -2265,7 +2265,7 @@ class Global(DataCarrier, _EmptyDataMixin):
         return np.dot(self.data_ro, np.conj(other.data_ro))
 
 
-class Map(object):
+class Map:
 
     """OP2 map, a relation between two :class:`Set` objects.
 
@@ -3233,8 +3233,6 @@ class JITModule(Cached):
 
         for arg in args:
             key += arg._wrapper_cache_key_
-            for map_ in arg.map_tuple:
-                key += (seen[map_],)
         key += (kwargs.get("iterate", None), cls, configuration["simd_width"])
         return key
 
