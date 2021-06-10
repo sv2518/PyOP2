@@ -96,7 +96,7 @@ class DataCarrierArg(Arg, ABC):
 
     def __repr__(self):
         return "Arg(%r, %r, %r)" % \
-            (self.data_class, self._map, self._access)
+            (type(self), self._map, self._access)
 
     @cached_property
     def name(self):
@@ -214,15 +214,23 @@ class MixedArg(ABC):
     def __init__(self, args):
         self._args = args
 
-    def __iter__(self):
-        return self
+    # def __iter__(self):
+    #     return self
 
-    def __next__(self):
+    # def __next__(self):
+    #     for arg in self._args:
+    #         yield arg
+
+    def __iter__(self):
         for arg in self._args:
             yield arg
 
     def split(self):
         return self._args
+
+    @property
+    def _wrapper_cache_key_(self):
+        return tuple([arg._wrapper_cache_key_ for arg in self._args])
 
 
 class MixedDatArg(MixedArg):
@@ -249,6 +257,9 @@ class MixedMatArg(MixedArg):
     #     return tuple(_make_object('Arg', data_class=Mat, self.data[i, j], (mr.split[i], mc.split[j]),
     #                               access=self._access)
                      # for i in range(rows) for j in range(cols))
+
+class MixedMapArg(MixedArg):
+    ...
 
 
 class SetArg(Arg):

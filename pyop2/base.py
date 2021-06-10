@@ -48,7 +48,7 @@ import types
 from hashlib import md5
 import functools
 
-from pyop2.arg import DatArg, GlobalArg, MatArg, MapArg, MixedDatArg, MixedMatArg, SetArg
+from pyop2.arg import DatArg, GlobalArg, MatArg, MapArg, MixedDatArg, MixedMatArg, MixedMapArg, SetArg
 from pyop2.datatypes import IntType, as_cstr, dtype_limits, ScalarType, as_ctypes
 from pyop2.configuration import configuration
 from pyop2.caching import Cached
@@ -1772,10 +1772,11 @@ class MixedDat:
         self.comm = self._dats[0].comm
 
     def __call__(self, access, path=None):
-        if configuration["type_check"] and path and path.toset != self.dataset.set:
-            raise MapValueError("To Set of Map does not match Set of Dat.")
+        # if configuration["type_check"] and path and path.toset != self.dataset.set:
+        #     raise MapValueError("To Set of Map does not match Set of Dat.")
+        assert isinstance(path, MixedMapArg)
 
-        return MixedDatArg(dat(access, path) for dat in self._dats)
+        return MixedDatArg([dat(access, path_) for dat, path_ in zip(self._dats, path)])
 
     @cached_property
     def _kernel_args_(self):
@@ -2428,6 +2429,9 @@ class MixedMap:
     @classmethod
     def _cache_key(cls, maps):
         return maps
+
+    def __call__(self):
+        return MixedMapArg([m() for m in self._maps])
 
     @cached_property
     def _kernel_args_(self):

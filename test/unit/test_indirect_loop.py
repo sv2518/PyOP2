@@ -158,8 +158,8 @@ class TestIndirectLoop:
         u = op2.Dat(unitset, np.array([0], dtype=np.uint32), np.uint32, "u")
         kernel_inc = "static void inc(unsigned int* x) { (*x) = (*x) + 1; }\n"
         pl = op2.ParLoop(op2.Kernel(kernel_inc, "inc"),
-                         iterset.to_arg(), u(op2.INC, iterset2unitset))
-        pl(iterset, u)
+                         iterset.to_arg(), u(op2.INC, iterset2unitset()))
+        pl(iterset, u, iterset2unitset)
         assert u.data[0] == nelems
 
     def test_indirect_max(self, iterset, indset, iterset2indset):
@@ -168,9 +168,10 @@ class TestIndirectLoop:
         a.data[:] = -10
         b.data[:] = -5
         kernel = "static void maxify(int *a, int *b) {*a = *a < *b ? *b : *a;}\n"
+        maparg = iterset2indset()
         pl = op2.ParLoop(op2.Kernel(kernel, "maxify"),
-                         iterset.to_arg(), a(op2.MAX, iterset2indset), b(op2.READ, iterset2indset))
-        pl(iterset, a, b)
+                         iterset.to_arg(), a(op2.MAX, maparg), b(op2.READ, maparg))
+        pl(iterset, a, b, iterset2indset)
         assert np.allclose(a.data_ro, -5)
 
     def test_indirect_min(self, iterset, indset, iterset2indset):
@@ -179,9 +180,10 @@ class TestIndirectLoop:
         a.data[:] = 10
         b.data[:] = 5
         kernel = "static void minify(int *a, int *b) {*a = *a > *b ? *b : *a;}\n"
+        maparg = iterset2indset()
         pl = op2.ParLoop(op2.Kernel(kernel, "minify"),
-                     iterset.to_arg(), a(op2.MIN, iterset2indset), b(op2.READ, iterset2indset))
-        pl(iterset, a, b)
+                     iterset.to_arg(), a(op2.MIN, maparg), b(op2.READ, maparg))
+        pl(iterset, a, b, iterset2indset)
         assert np.allclose(a.data_ro, 5)
 
     def test_global_read(self, iterset, x, iterset2indset):
@@ -192,9 +194,9 @@ class TestIndirectLoop:
 
         pl = op2.ParLoop(op2.Kernel(kernel_global_read, "global_read"),
                          iterset.to_arg(),
-                         x(op2.RW, iterset2indset),
+                         x(op2.RW, iterset2indset()),
                          g(op2.READ))
-        pl(iterset, x, g)
+        pl(iterset, x, g, iterset2indset)
         assert sum(x.data) == sum(map(lambda v: v // 2, range(nelems)))
 
     def test_global_inc(self, iterset, x, iterset2indset):
@@ -208,9 +210,9 @@ class TestIndirectLoop:
 
         pl = op2.ParLoop(op2.Kernel(kernel_global_inc, "global_inc"),
                          iterset.to_arg(),
-                         x(op2.RW, iterset2indset),
+                         x(op2.RW, iterset2indset()),
                          g(op2.INC))
-        pl(iterset, x, g)
+        pl(iterset, x, g, iterset2indset)
         assert sum(x.data) == nelems * (nelems + 1) // 2
         assert g.data[0] == nelems * (nelems + 1) // 2
 
@@ -218,8 +220,8 @@ class TestIndirectLoop:
         """Set both components of a vector-valued Dat to a scalar value."""
         kernel_wo = "static void wo(unsigned int* x) { x[0] = 42; x[1] = 43; }\n"
         pl = op2.ParLoop(op2.Kernel(kernel_wo, "wo"), iterset.to_arg(),
-                         x2(op2.WRITE, iterset2indset))
-        pl(iterset, x2)
+                         x2(op2.WRITE, iterset2indset()))
+        pl(iterset, x2, iterset2indset)
         assert all(all(v == [42, 43]) for v in x2.data)
 
     def test_2d_map(self):
@@ -241,8 +243,8 @@ class TestIndirectLoop:
         }"""
         pl = op2.ParLoop(op2.Kernel(kernel_sum, "sum"), edges.to_arg(),
                          edge_vals(op2.WRITE),
-                         node_vals(op2.READ, edge2node))
-        pl(edges, edge_vals, node_vals)
+                         node_vals(op2.READ, edge2node()))
+        pl(edges, edge_vals, node_vals, edge2node)
 
         expected = np.arange(1, nedges * 2 + 1, 2)
         assert all(expected == edge_vals.data)
@@ -273,9 +275,9 @@ class TestMixedIndirectLoop:
           d[0] += x[0]; d[1] += x[0];
         }"""
         pl = op2.ParLoop(op2.Kernel(kernel_inc, "inc"), iterset.to_arg(),
-                         mdat(op2.INC, mmap),
+                         mdat(op2.INC, mmap()),
                          d(op2.READ))
-        pl.compute(iterset, mdat, d)
+        pl(iterset, mdat, d, mmap)
         assert all(mdat[0].data == 1.0) and mdat[1].data == 4096.0
 
     def test_mixed_non_mixed_dat_itspace(self, mdat, mmap, iterset):
@@ -290,9 +292,9 @@ class TestMixedIndirectLoop:
                               pred=["static"])
         pl = op2.ParLoop(op2.Kernel(kernel_code.gencode(), "inc"),
                          iterset.to_arg(),
-                         mdat(op2.INC, mmap),
+                         mdat(op2.INC, mmap()),
                          d(op2.READ))
-        pl(iterset, mdat, d)
+        pl(iterset, mdat, d, mmap)
         assert all(mdat[0].data == 1.0) and mdat[1].data == 4096.0
 
 
