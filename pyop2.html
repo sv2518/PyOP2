@@ -1,0 +1,778 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+    <title>pyop2 package &#8212; PyOP2 2020.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/classic.css" />
+    
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="pyop2.codegen package" href="pyop2.codegen.html" />
+    <link rel="prev" title="pyop2 user documentation" href="user.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="pyop2.codegen.html" title="pyop2.codegen package"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="user.html" title="pyop2 user documentation"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">PyOP2 2020.0 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">pyop2 package</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="pyop2-package">
+<h1>pyop2 package<a class="headerlink" href="#pyop2-package" title="Permalink to this headline">¶</a></h1>
+<section id="subpackages">
+<h2>Subpackages<a class="headerlink" href="#subpackages" title="Permalink to this headline">¶</a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="pyop2.codegen.html">pyop2.codegen package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pyop2.codegen.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyop2.codegen.html#pyop2-codegen-builder-module">pyop2.codegen.builder module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyop2.codegen.html#pyop2-codegen-loopycompat-module">pyop2.codegen.loopycompat module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyop2.codegen.html#pyop2-codegen-node-module">pyop2.codegen.node module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyop2.codegen.html#pyop2-codegen-optimise-module">pyop2.codegen.optimise module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyop2.codegen.html#pyop2-codegen-rep2loopy-module">pyop2.codegen.rep2loopy module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyop2.codegen.html#pyop2-codegen-representation-module">pyop2.codegen.representation module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyop2.codegen.html#module-contents">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="pyop2-base-module">
+<h2>pyop2.base module<a class="headerlink" href="#pyop2-base-module" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="module-pyop2.caching">
+<span id="pyop2-caching-module"></span><h2>pyop2.caching module<a class="headerlink" href="#module-pyop2.caching" title="Permalink to this headline">¶</a></h2>
+<p>Provides common base classes for cached objects.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.caching.report_cache">
+<span class="sig-prename descclassname"><span class="pre">pyop2.caching.</span></span><span class="sig-name descname"><span class="pre">report_cache</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">typ</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.caching.report_cache" title="Permalink to this definition">¶</a></dt>
+<dd><p>Report the size of caches of type <code class="docutils literal notranslate"><span class="pre">typ</span></code></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>typ</strong> – A class of cached object.  For example
+<a class="reference internal" href="#pyop2.caching.ObjectCached" title="pyop2.caching.ObjectCached"><code class="xref py py-class docutils literal notranslate"><span class="pre">ObjectCached</span></code></a> or <a class="reference internal" href="#pyop2.caching.Cached" title="pyop2.caching.Cached"><code class="xref py py-class docutils literal notranslate"><span class="pre">Cached</span></code></a>.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.caching.ObjectCached">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.caching.</span></span><span class="sig-name descname"><span class="pre">ObjectCached</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.caching.ObjectCached" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Base class for objects that should be cached on another object.</p>
+<p>Derived classes need to implement classmethods
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">_process_args()</span></code> and <code class="xref py py-meth docutils literal notranslate"><span class="pre">_cache_key()</span></code> (which see for more
+details).  The object on which the cache is stored should contain
+a dict in its <code class="docutils literal notranslate"><span class="pre">_cache</span></code> attribute.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This kind of cache sets up a circular reference.  If either of
+the objects implements <code class="docutils literal notranslate"><span class="pre">__del__</span></code>, the Python garbage
+collector will not be able to collect this cycle, and hence
+the cache will never be evicted.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The derived class’ <code class="xref py py-meth docutils literal notranslate"><span class="pre">__init__()</span></code> is still called if the
+object is retrieved from cache. If that is not desired,
+derived classes can set a flag indicating whether the
+constructor has already been called and immediately return
+from <code class="xref py py-meth docutils literal notranslate"><span class="pre">__init__()</span></code> if the flag is set. Otherwise the object
+will be re-initialized even if it was returned from cache!</p>
+</div>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.caching.Cached">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.caching.</span></span><span class="sig-name descname"><span class="pre">Cached</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.caching.Cached" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Base class providing global caching of objects. Derived classes need to
+implement classmethods <code class="xref py py-meth docutils literal notranslate"><span class="pre">_process_args()</span></code> and <code class="xref py py-meth docutils literal notranslate"><span class="pre">_cache_key()</span></code>
+and define a class attribute <code class="xref py py-attr docutils literal notranslate"><span class="pre">_cache</span></code> of type <code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The derived class’ <code class="xref py py-meth docutils literal notranslate"><span class="pre">__init__()</span></code> is still called if the object is
+retrieved from cache. If that is not desired, derived classes can set
+a flag indicating whether the constructor has already been called and
+immediately return from <code class="xref py py-meth docutils literal notranslate"><span class="pre">__init__()</span></code> if the flag is set. Otherwise
+the object will be re-initialized even if it was returned from cache!</p>
+</div>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyop2.caching.Cached.cache_key">
+<span class="sig-name descname"><span class="pre">cache_key</span></span><a class="headerlink" href="#pyop2.caching.Cached.cache_key" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cache key.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="pyop2-compilation-module">
+<h2>pyop2.compilation module<a class="headerlink" href="#pyop2-compilation-module" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="module-pyop2.configuration">
+<span id="pyop2-configuration-module"></span><h2>pyop2.configuration module<a class="headerlink" href="#module-pyop2.configuration" title="Permalink to this headline">¶</a></h2>
+<p>PyOP2 global configuration.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.configuration.Configuration">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.configuration.</span></span><span class="sig-name descname"><span class="pre">Configuration</span></span><a class="headerlink" href="#pyop2.configuration.Configuration" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code></p>
+<p>PyOP2 configuration parameters</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>compiler</strong> – compiler identifier (one of <cite>gcc</cite>, <cite>icc</cite>).</p></li>
+<li><p><strong>simd_width</strong> – number of doubles in SIMD instructions
+(e.g. 4 for AVX2, 8 for AVX512).</p></li>
+<li><p><strong>cflags</strong> – extra flags to be passed to the C compiler.</p></li>
+<li><p><strong>ldflags</strong> – extra flags to be passed to the linker.</p></li>
+<li><p><strong>debug</strong> – Turn on debugging for generated code (turns off
+compiler optimisations).</p></li>
+<li><p><strong>type_check</strong> – Should PyOP2 type-check API-calls?  (Default,
+yes)</p></li>
+<li><p><strong>check_src_hashes</strong> – Should PyOP2 check that generated code is
+the same on all processes?  (Default, yes).  Uses an allreduce.</p></li>
+<li><p><strong>cache_dir</strong> – Where should generated code be cached?</p></li>
+<li><p><strong>node_local_compilation</strong> – <p>Should generated code by compiled
+“node-local” (one process for each set of processes that share</p>
+<blockquote>
+<div><p>a filesystem)?  You should probably arrange to set cache_dir
+to a node-local filesystem too.</p>
+</div></blockquote>
+</p></li>
+<li><p><strong>log_level</strong> – How chatty should PyOP2 be?  Valid values
+are “DEBUG”, “INFO”, “WARNING”, “ERROR”, “CRITICAL”.</p></li>
+<li><p><strong>use_safe_cflags</strong> – Apply cflags turning off some compiler
+optimisations that are known to be buggy on particular
+versions? See <code class="xref py py-attr docutils literal notranslate"><span class="pre">workaround_cflags</span></code> for details.</p></li>
+<li><p><strong>dump_gencode</strong> – Should PyOP2 write the generated code
+somewhere for inspection?</p></li>
+<li><p><strong>print_cache_size</strong> – Should PyOP2 print the size of caches at
+program exit?</p></li>
+<li><p><strong>print_summary</strong> – Should PyOP2 print a summary of timings at
+program exit?</p></li>
+<li><p><strong>matnest</strong> – Should matrices on mixed maps be built as nests? (Default yes)</p></li>
+<li><p><strong>block_sparsity</strong> – Should sparsity patterns on datasets with
+cdim &gt; 1 be built as block sparsities, or dof sparsities.  The
+former saves memory but changes which preconditioners are
+available for the resulting matrices.  (Default yes)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyop2.configuration.Configuration.DEFAULTS">
+<span class="sig-name descname"><span class="pre">DEFAULTS</span></span><em class="property"> <span class="pre">=</span> <span class="pre">{'block_sparsity':</span> <span class="pre">('PYOP2_BLOCK_SPARSITY',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">True),</span> <span class="pre">'cache_dir':</span> <span class="pre">('PYOP2_CACHE_DIR',</span> <span class="pre">&lt;class</span> <span class="pre">'str'&gt;,</span> <span class="pre">'/tmp/pyop2-cache-uid1001'),</span> <span class="pre">'cflags':</span> <span class="pre">('PYOP2_CFLAGS',</span> <span class="pre">&lt;class</span> <span class="pre">'str'&gt;,</span> <span class="pre">''),</span> <span class="pre">'check_src_hashes':</span> <span class="pre">('PYOP2_CHECK_SRC_HASHES',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">True),</span> <span class="pre">'compiler':</span> <span class="pre">('PYOP2_BACKEND_COMPILER',</span> <span class="pre">&lt;class</span> <span class="pre">'str'&gt;,</span> <span class="pre">'gcc'),</span> <span class="pre">'compute_kernel_flops':</span> <span class="pre">('PYOP2_COMPUTE_KERNEL_FLOPS',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">False),</span> <span class="pre">'debug':</span> <span class="pre">('PYOP2_DEBUG',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">False),</span> <span class="pre">'dump_gencode':</span> <span class="pre">('PYOP2_DUMP_GENCODE',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">False),</span> <span class="pre">'ldflags':</span> <span class="pre">('PYOP2_LDFLAGS',</span> <span class="pre">&lt;class</span> <span class="pre">'str'&gt;,</span> <span class="pre">''),</span> <span class="pre">'log_level':</span> <span class="pre">('PYOP2_LOG_LEVEL',</span> <span class="pre">(&lt;class</span> <span class="pre">'str'&gt;,</span> <span class="pre">&lt;class</span> <span class="pre">'int'&gt;),</span> <span class="pre">'WARNING'),</span> <span class="pre">'matnest':</span> <span class="pre">('PYOP2_MATNEST',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">True),</span> <span class="pre">'no_fork_available':</span> <span class="pre">('PYOP2_NO_FORK_AVAILABLE',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">False),</span> <span class="pre">'node_local_compilation':</span> <span class="pre">('PYOP2_NODE_LOCAL_COMPILATION',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">True),</span> <span class="pre">'print_cache_size':</span> <span class="pre">('PYOP2_PRINT_CACHE_SIZE',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">False),</span> <span class="pre">'print_summary':</span> <span class="pre">('PYOP2_PRINT_SUMMARY',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">False),</span> <span class="pre">'simd_width':</span> <span class="pre">('PYOP2_SIMD_WIDTH',</span> <span class="pre">&lt;class</span> <span class="pre">'int'&gt;,</span> <span class="pre">4),</span> <span class="pre">'type_check':</span> <span class="pre">('PYOP2_TYPE_CHECK',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">True),</span> <span class="pre">'use_safe_cflags':</span> <span class="pre">('PYOP2_USE_SAFE_CFLAGS',</span> <span class="pre">&lt;class</span> <span class="pre">'bool'&gt;,</span> <span class="pre">True)}</span></em><a class="headerlink" href="#pyop2.configuration.Configuration.DEFAULTS" title="Permalink to this definition">¶</a></dt>
+<dd><p>Default values for PyOP2 configuration parameters</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyop2.configuration.Configuration.reset">
+<span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.configuration.Configuration.reset" title="Permalink to this definition">¶</a></dt>
+<dd><p>Reset the configuration parameters to the default values.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyop2.configuration.Configuration.reconfigure">
+<span class="sig-name descname"><span class="pre">reconfigure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.configuration.Configuration.reconfigure" title="Permalink to this definition">¶</a></dt>
+<dd><p>Update the configuration parameters with new values.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyop2.configuration.Configuration.unsafe_reconfigure">
+<span class="sig-name descname"><span class="pre">unsafe_reconfigure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.configuration.Configuration.unsafe_reconfigure" title="Permalink to this definition">¶</a></dt>
+<dd><p>“Unsafely reconfigure (just replacing the values)</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-pyop2.datatypes">
+<span id="pyop2-datatypes-module"></span><h2>pyop2.datatypes module<a class="headerlink" href="#module-pyop2.datatypes" title="Permalink to this headline">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.datatypes.as_cstr">
+<span class="sig-prename descclassname"><span class="pre">pyop2.datatypes.</span></span><span class="sig-name descname"><span class="pre">as_cstr</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dtype</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.datatypes.as_cstr" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert a numpy dtype like object to a C type as a string.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.datatypes.as_ctypes">
+<span class="sig-prename descclassname"><span class="pre">pyop2.datatypes.</span></span><span class="sig-name descname"><span class="pre">as_ctypes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dtype</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.datatypes.as_ctypes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert a numpy dtype like object to a ctypes type.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.datatypes.dtype_limits">
+<span class="sig-prename descclassname"><span class="pre">pyop2.datatypes.</span></span><span class="sig-name descname"><span class="pre">dtype_limits</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dtype</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.datatypes.dtype_limits" title="Permalink to this definition">¶</a></dt>
+<dd><p>Attempt to determine the min and max values of a datatype.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>dtype</strong> – A numpy datatype.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>a 2-tuple of min, max</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – If numeric limits could not be determined.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-pyop2.exceptions">
+<span id="pyop2-exceptions-module"></span><h2>pyop2.exceptions module<a class="headerlink" href="#module-pyop2.exceptions" title="Permalink to this headline">¶</a></h2>
+<p>OP2 exception types</p>
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.DataTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">DataTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.DataTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for data.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.DimTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">DimTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.DimTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for dimension.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.ArityTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">ArityTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.ArityTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for arity.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.IndexTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">IndexTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.IndexTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for index.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.NameTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">NameTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.NameTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for name.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.SetTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">SetTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.SetTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.Set</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.SizeTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">SizeTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.SizeTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for size.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.SubsetIndexOutOfBounds">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">SubsetIndexOutOfBounds</span></span><a class="headerlink" href="#pyop2.exceptions.SubsetIndexOutOfBounds" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Out of bound index.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.SparsityTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">SparsityTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.SparsityTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.Sparsity</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.MapTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">MapTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.MapTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.Map</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.DataSetTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">DataSetTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.DataSetTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.DataSet</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.MatTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">MatTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.MatTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.Mat</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.DatTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">DatTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.DatTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.Dat</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.KernelTypeError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">KernelTypeError</span></span><a class="headerlink" href="#pyop2.exceptions.KernelTypeError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TypeError</span></code></p>
+<p>Invalid type for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.Kernel</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.DataValueError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">DataValueError</span></span><a class="headerlink" href="#pyop2.exceptions.DataValueError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ValueError</span></code></p>
+<p>Illegal value for data.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.IndexValueError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">IndexValueError</span></span><a class="headerlink" href="#pyop2.exceptions.IndexValueError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ValueError</span></code></p>
+<p>Illegal value for index.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.ModeValueError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">ModeValueError</span></span><a class="headerlink" href="#pyop2.exceptions.ModeValueError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ValueError</span></code></p>
+<p>Illegal value for mode.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.IterateValueError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">IterateValueError</span></span><a class="headerlink" href="#pyop2.exceptions.IterateValueError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ValueError</span></code></p>
+<p>Illegal value for iterate.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.SetValueError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">SetValueError</span></span><a class="headerlink" href="#pyop2.exceptions.SetValueError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ValueError</span></code></p>
+<p>Illegal value for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.Set</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.MapValueError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">MapValueError</span></span><a class="headerlink" href="#pyop2.exceptions.MapValueError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ValueError</span></code></p>
+<p>Illegal value for <code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.op2.Map</span></code>.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.ConfigurationError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">ConfigurationError</span></span><a class="headerlink" href="#pyop2.exceptions.ConfigurationError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">RuntimeError</span></code></p>
+<p>Illegal configuration value or type.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.CompilationError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">CompilationError</span></span><a class="headerlink" href="#pyop2.exceptions.CompilationError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">RuntimeError</span></code></p>
+<p>Error during JIT compilation</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="pyop2.exceptions.SparsityFormatError">
+<em class="property"><span class="pre">exception</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.exceptions.</span></span><span class="sig-name descname"><span class="pre">SparsityFormatError</span></span><a class="headerlink" href="#pyop2.exceptions.SparsityFormatError" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ValueError</span></code></p>
+<p>Unable to produce a sparsity for this matrix format.</p>
+</dd></dl>
+
+</section>
+<section id="module-pyop2.logger">
+<span id="pyop2-logger-module"></span><h2>pyop2.logger module<a class="headerlink" href="#module-pyop2.logger" title="Permalink to this headline">¶</a></h2>
+<p>The PyOP2 logger, based on the Python standard library logging module.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.logger.set_log_level">
+<span class="sig-prename descclassname"><span class="pre">pyop2.logger.</span></span><span class="sig-name descname"><span class="pre">set_log_level</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">level</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.logger.set_log_level" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the log level of the PyOP2 logger.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>level</strong> – the log level. Valid values: DEBUG, INFO, WARNING, ERROR, CRITICAL</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.logger.log">
+<span class="sig-prename descclassname"><span class="pre">pyop2.logger.</span></span><span class="sig-name descname"><span class="pre">log</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">level</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">msg</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.logger.log" title="Permalink to this definition">¶</a></dt>
+<dd><p>Print ‘msg % args’ with the severity ‘level’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>level</strong> – the log level. Valid values: DEBUG, INFO, WARNING, ERROR, CRITICAL</p></li>
+<li><p><strong>msg</strong> – the message</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.logger.progress">
+<span class="sig-prename descclassname"><span class="pre">pyop2.logger.</span></span><span class="sig-name descname"><span class="pre">progress</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">level</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">msg</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.logger.progress" title="Permalink to this definition">¶</a></dt>
+<dd><p>A context manager to print a progress message.</p>
+<p>The block is wrapped in <code class="docutils literal notranslate"><span class="pre">msg...</span></code>, <code class="docutils literal notranslate"><span class="pre">msg...done</span></code> log messages
+with an appropriate indent (to distinguish nested message).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>level</strong> – the log level.  See <a class="reference internal" href="#pyop2.logger.log" title="pyop2.logger.log"><code class="xref py py-func docutils literal notranslate"><span class="pre">log()</span></code></a> for valid values</p></li>
+<li><p><strong>msg</strong> – the message.</p></li>
+</ul>
+</dd>
+</dl>
+<p>See <a class="reference internal" href="#pyop2.logger.log" title="pyop2.logger.log"><code class="xref py py-func docutils literal notranslate"><span class="pre">log()</span></code></a> for more details.</p>
+</dd></dl>
+
+</section>
+<section id="module-pyop2.mpi">
+<span id="pyop2-mpi-module"></span><h2>pyop2.mpi module<a class="headerlink" href="#module-pyop2.mpi" title="Permalink to this headline">¶</a></h2>
+<p>PyOP2 MPI communicator.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.mpi.dup_comm">
+<span class="sig-prename descclassname"><span class="pre">pyop2.mpi.</span></span><span class="sig-name descname"><span class="pre">dup_comm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">comm_in</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.mpi.dup_comm" title="Permalink to this definition">¶</a></dt>
+<dd><p>Given a communicator return a communicator for internal use.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>comm_in</strong> – Communicator to duplicate.  If not provided,
+defaults to COMM_WORLD.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>An mpi4py communicator.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="pyop2-op2-module">
+<h2>pyop2.op2 module<a class="headerlink" href="#pyop2-op2-module" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="pyop2-petsc-base-module">
+<h2>pyop2.petsc_base module<a class="headerlink" href="#pyop2-petsc-base-module" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="module-pyop2.profiling">
+<span id="pyop2-profiling-module"></span><h2>pyop2.profiling module<a class="headerlink" href="#module-pyop2.profiling" title="Permalink to this headline">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.profiling.timed_stage">
+<span class="sig-prename descclassname"><span class="pre">pyop2.profiling.</span></span><span class="sig-name descname"><span class="pre">timed_stage</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.profiling.timed_stage" title="Permalink to this definition">¶</a></dt>
+<dd><p>Enter a code Stage, this is a PETSc log Stage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>name</strong> – The name of the stage.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.profiling.timed_region">
+<span class="sig-prename descclassname"><span class="pre">pyop2.profiling.</span></span><span class="sig-name descname"><span class="pre">timed_region</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.profiling.timed_region" title="Permalink to this definition">¶</a></dt>
+<dd><p>Time a code region, this a PETSc log Event.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>name</strong> – The name of the region.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.profiling.timed_function">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.profiling.</span></span><span class="sig-name descname"><span class="pre">timed_function</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.profiling.timed_function" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+</dd></dl>
+
+</section>
+<section id="pyop2-pyparloop-module">
+<h2>pyop2.pyparloop module<a class="headerlink" href="#pyop2-pyparloop-module" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="pyop2-sequential-module">
+<h2>pyop2.sequential module<a class="headerlink" href="#pyop2-sequential-module" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="pyop2-sparsity-module">
+<h2>pyop2.sparsity module<a class="headerlink" href="#pyop2-sparsity-module" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="module-pyop2.utils">
+<span id="pyop2-utils-module"></span><h2>pyop2.utils module<a class="headerlink" href="#module-pyop2.utils" title="Permalink to this headline">¶</a></h2>
+<p>Common utility classes/functions.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.utils.cached_property">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">cached_property</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fget</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.cached_property" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>A read-only &#64;property that is only evaluated once. The value is cached
+on the object itself rather than the function or class; this should prevent
+memory leakage.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.as_tuple">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">as_tuple</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">item</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">length</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_none</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.as_tuple" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.as_type">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">as_type</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">typ</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.as_type" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return obj if it is of dtype typ, otherwise return a copy type-cast to
+typ.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.tuplify">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">tuplify</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.tuplify" title="Permalink to this definition">¶</a></dt>
+<dd><p>Turn a data structure into a tuple tree.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.utils.validate_base">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">validate_base</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">checks</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_base" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Decorator to validate arguments</p>
+<p>Formal parameters that don’t exist in the definition of the function
+being decorated as well as actual arguments not being present when
+the validation is called are silently ignored.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyop2.utils.validate_base.check_args">
+<span class="sig-name descname"><span class="pre">check_args</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_base.check_args" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.utils.validate_type">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">validate_type</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">checks</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_type" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyop2.utils.validate_base" title="pyop2.utils.validate_base"><code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.utils.validate_base</span></code></a></p>
+<p>Decorator to validate argument types</p>
+<p>The decorator expects one or more arguments, which are 3-tuples of
+(name, type, exception), where name is the argument name in the
+function being decorated, type is the argument type to be validated
+and exception is the exception type to be raised if validation fails.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyop2.utils.validate_type.check_arg">
+<span class="sig-name descname"><span class="pre">check_arg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">argtype</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_type.check_arg" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.utils.validate_in">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">validate_in</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">checks</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_in" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyop2.utils.validate_base" title="pyop2.utils.validate_base"><code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.utils.validate_base</span></code></a></p>
+<p>Decorator to validate argument is in a set of valid argument values</p>
+<p>The decorator expects one or more arguments, which are 3-tuples of
+(name, list, exception), where name is the argument name in the
+function being decorated, list is the list of valid argument values
+and exception is the exception type to be raised if validation fails.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyop2.utils.validate_in.check_arg">
+<span class="sig-name descname"><span class="pre">check_arg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">values</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_in.check_arg" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.utils.validate_range">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">validate_range</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">checks</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_range" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyop2.utils.validate_base" title="pyop2.utils.validate_base"><code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.utils.validate_base</span></code></a></p>
+<p>Decorator to validate argument value is in a given numeric range</p>
+<p>The decorator expects one or more arguments, which are 3-tuples of
+(name, range, exception), where name is the argument name in the
+function being decorated, range is a 2-tuple defining the valid argument
+range and exception is the exception type to be raised if validation
+fails.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyop2.utils.validate_range.check_arg">
+<span class="sig-name descname"><span class="pre">check_arg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">range</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_range.check_arg" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyop2.utils.validate_dtype">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">validate_dtype</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">checks</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_dtype" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyop2.utils.validate_base" title="pyop2.utils.validate_base"><code class="xref py py-class docutils literal notranslate"><span class="pre">pyop2.utils.validate_base</span></code></a></p>
+<p>Decorator to validate argument value is in a valid Numpy dtype</p>
+<p>The decorator expects one or more arguments, which are 3-tuples of
+(name, _, exception), where name is the argument name in the
+function being decorated, second argument is ignored and exception
+is the exception type to be raised if validation fails.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyop2.utils.validate_dtype.check_arg">
+<span class="sig-name descname"><span class="pre">check_arg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ignored</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exception</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.validate_dtype.check_arg" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.verify_reshape">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">verify_reshape</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_none</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.verify_reshape" title="Permalink to this definition">¶</a></dt>
+<dd><p>Verify data is of type dtype and try to reshaped to shape.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.align">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">align</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alignment</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">16</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.align" title="Permalink to this definition">¶</a></dt>
+<dd><p>Align BYTES to a multiple of ALIGNMENT</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.flatten">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">flatten</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">iterable</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.flatten" title="Permalink to this definition">¶</a></dt>
+<dd><p>Flatten a given nested iterable.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.parser">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">parser</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.parser" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create default argparse.ArgumentParser parser for pyop2 programs.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.parse_args">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">parse_args</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.parse_args" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return parsed arguments as variables for later use.</p>
+<p>ARGS and KWARGS are passed into the parser instantiation.
+The only recognised options are <cite>group</cite> and <cite>description</cite>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.trim">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">trim</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">docstring</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.trim" title="Permalink to this definition">¶</a></dt>
+<dd><p>Trim a docstring according to <a class="reference external" href="http://www.python.org/dev/peps/pep-0257/#handling-docstring-indentation">PEP 257</a>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.strip">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">strip</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">code</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.strip" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyop2.utils.get_petsc_dir">
+<span class="sig-prename descclassname"><span class="pre">pyop2.utils.</span></span><span class="sig-name descname"><span class="pre">get_petsc_dir</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pyop2.utils.get_petsc_dir" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="pyop2-version-module">
+<h2>pyop2.version module<a class="headerlink" href="#pyop2-version-module" title="Permalink to this headline">¶</a></h2>
+</section>
+<section id="module-contents">
+<h2>Module contents<a class="headerlink" href="#module-contents" title="Permalink to this headline">¶</a></h2>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">pyop2 package</a><ul>
+<li><a class="reference internal" href="#subpackages">Subpackages</a></li>
+<li><a class="reference internal" href="#submodules">Submodules</a></li>
+<li><a class="reference internal" href="#pyop2-base-module">pyop2.base module</a></li>
+<li><a class="reference internal" href="#module-pyop2.caching">pyop2.caching module</a></li>
+<li><a class="reference internal" href="#pyop2-compilation-module">pyop2.compilation module</a></li>
+<li><a class="reference internal" href="#module-pyop2.configuration">pyop2.configuration module</a></li>
+<li><a class="reference internal" href="#module-pyop2.datatypes">pyop2.datatypes module</a></li>
+<li><a class="reference internal" href="#module-pyop2.exceptions">pyop2.exceptions module</a></li>
+<li><a class="reference internal" href="#module-pyop2.logger">pyop2.logger module</a></li>
+<li><a class="reference internal" href="#module-pyop2.mpi">pyop2.mpi module</a></li>
+<li><a class="reference internal" href="#pyop2-op2-module">pyop2.op2 module</a></li>
+<li><a class="reference internal" href="#pyop2-petsc-base-module">pyop2.petsc_base module</a></li>
+<li><a class="reference internal" href="#module-pyop2.profiling">pyop2.profiling module</a></li>
+<li><a class="reference internal" href="#pyop2-pyparloop-module">pyop2.pyparloop module</a></li>
+<li><a class="reference internal" href="#pyop2-sequential-module">pyop2.sequential module</a></li>
+<li><a class="reference internal" href="#pyop2-sparsity-module">pyop2.sparsity module</a></li>
+<li><a class="reference internal" href="#module-pyop2.utils">pyop2.utils module</a></li>
+<li><a class="reference internal" href="#pyop2-version-module">pyop2.version module</a></li>
+<li><a class="reference internal" href="#module-contents">Module contents</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="user.html"
+                        title="previous chapter">pyop2 user documentation</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="pyop2.codegen.html"
+                        title="next chapter">pyop2.codegen package</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/pyop2.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="pyop2.codegen.html" title="pyop2.codegen package"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="user.html" title="pyop2 user documentation"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">PyOP2 2020.0 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">pyop2 package</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2012-2013, Imperial College et al.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.2.
+    </div>
+  </body>
+</html>
