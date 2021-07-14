@@ -3318,14 +3318,17 @@ class Kernel(Cached):
 
         if isinstance(code, Node):
             code = code.gencode()
-        if isinstance(code, loopy.LoopKernel):
-            from loopy.tools import LoopyKeyBuilder
-            from pytools.persistent_dict import new_hash
-            key_hash = new_hash()
+        from loopy.tools import LoopyKeyBuilder
+        
+        if isinstance(code, loopy.LoopKernel) or isinstance(code, loopy.program.Program):
+            if isinstance(code, loopy.program.Program):
+                code = code.root_kernel
+            from hashlib import sha256
+            key_hash = sha256()
+
             code.update_persistent_hash(key_hash, LoopyKeyBuilder())
             code = key_hash.hexdigest()
-        hashee = (str(code) + name + str(sorted(opts.items())) + str(include_dirs)
-                  + str(headers) + version + str(ldargs) + str(cpp) + str(requires_zeroed_output_arguments))
+        hashee = (str(code) + name + str(sorted(opts.items())) + str(include_dirs) + str(headers) + version + str(ldargs) + str(cpp) + str(requires_zeroed_output_arguments))
         return md5(hashee.encode()).hexdigest()
 
     @cached_property
@@ -3403,7 +3406,7 @@ class JITModule(Cached):
     def _cache_key(cls, kernel, iterset, *args, **kwargs):
         counter = itertools.count()
         seen = defaultdict(lambda: next(counter))
-        key = ((id(dup_comm(iterset.comm)), ) + kernel._wrapper_cache_key_ + iterset._wrapper_cache_key_
+        key = ((id(dup_comm(iterset.comm)), )+ kernel._wrapper_cache_key_  + iterset._wrapper_cache_key_
                + (iterset._extruded, (iterset._extruded and iterset.constant_layers), isinstance(iterset, Subset)))
 
         for arg in args:
@@ -3412,7 +3415,6 @@ class JITModule(Cached):
                 key += (seen[map_],)
 
         key += (kwargs.get("iterate", None), cls, configuration["simd_width"])
-
         return key
 
 
@@ -3801,7 +3803,3 @@ def par_loop(kernel, iterset, *args, **kwargs):
     ``elem_node`` for the relevant member of ``elements`` will be
     passed to the kernel as a vector.
     """
-    if isinstance(kernel, types.FunctionType):
-        from pyop2 import pyparloop
-        return pyparloop.ParLoop(kernel, iterset, *args, **kwargs).compute()
-    return _make_object('ParLoop', kernel, iterset, *args, **kwargs).compute()

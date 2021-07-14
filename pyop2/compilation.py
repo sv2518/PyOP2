@@ -221,7 +221,8 @@ class Compiler(object):
                 # Bug also on skylake with the vectoriser in this
                 # combination (disappears without
                 # -fno-tree-loop-vectorize!)
-                return ["-fno-tree-loop-vectorize", "-mno-avx512f"]
+                return []#["-fno-tree-loop-vectorize"]#, "-mno-avx512f"]
+
         return []
 
     @collective
@@ -241,7 +242,6 @@ class Compiler(object):
             hsh.update(self._ld.encode())
         hsh.update("".join(self._cppargs).encode())
         hsh.update("".join(self._ldargs).encode())
-
         basename = hsh.hexdigest()
 
         cachedir = configuration['cache_dir']
@@ -395,7 +395,7 @@ class LinuxCompiler(Compiler):
     :kwarg comm: Optional communicator to compile the code on (only
     rank 0 compiles code) (defaults to COMM_WORLD)."""
     def __init__(self, cppargs=[], ldargs=[], cpp=False, comm=None):
-        opt_flags = ['-march=native', '-O3', '-ffast-math', '-fopenmp-simd']
+        opt_flags = ['-march=native', '-O3', '-g','-ffast-math', '-fopenmp-simd']
         if configuration['debug']:
             opt_flags = ['-O0', '-g']
         cc = "mpicc"
@@ -421,7 +421,7 @@ class LinuxIntelCompiler(Compiler):
         rank 0 compiles code) (defaults to COMM_WORLD).
     """
     def __init__(self, cppargs=[], ldargs=[], cpp=False, comm=None):
-        opt_flags = ['-march=native', '-Ofast', '-xHost', '-qopenmp-simd']
+        opt_flags = ['-march=native', '-Ofast', '-xHost', '-fopenmp', "-xcore-avx512"]
         if configuration['debug']:
             opt_flags = ['-O0', '-g']
         cc = "mpicc"
@@ -429,7 +429,7 @@ class LinuxIntelCompiler(Compiler):
         if cpp:
             cc = "mpicxx"
             stdargs = []
-        cppargs = stdargs + ['-fPIC', '-no-multibyte-chars'] + opt_flags + cppargs
+        cppargs = stdargs + ['-fPIC'] + opt_flags + cppargs
         ldargs = ['-shared'] + ldargs
         super(LinuxIntelCompiler, self).__init__(cc, cppargs=cppargs, ldargs=ldargs,
                                                  cpp=cpp, comm=comm)

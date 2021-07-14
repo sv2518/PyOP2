@@ -69,7 +69,6 @@ def vectorise(wrapper, iname, batch_size):
     :arg batch_size: The vector width."""
     if batch_size == 1:
         return wrapper
-
     # create constant zero vectors
     wrapper = wrapper.copy(target=loopy.CVecTarget(batch_size, batchedblas=bool(configuration["batched_blas"])))
     kernel = wrapper.root_kernel
@@ -80,7 +79,6 @@ def vectorise(wrapper, iname, batch_size):
 
     if configuration["vectorization_strategy"] == "ve":
         kernel = loopy.split_iname(kernel, iname, batch_size, slabs=slabs, inner_tag="vec", inner_iname=inner_iname)
-
     alignment = configuration["alignment"]
     tmps = dict((name, tv.copy(alignment=alignment)) for name, tv in kernel.temporary_variables.items())
     kernel = kernel.copy(temporary_variables=tmps)
@@ -162,7 +160,7 @@ class JITModule(base.JITModule):
         vectorisable = not (has_matrix or has_rw) and (configuration["vectorization_strategy"])
 
         if (isinstance(self._kernel.code, loopy.LoopKernel) or isinstance(self._kernel.code, loopy.program.Program)) and vectorisable:
-            wrapper = loopy.inline_callable_kernel(wrapper, self._kernel.name)
+            #wrapper = loopy.inline_callable_kernel(wrapper, self._kernel.name)
             if not is_cplx:
                 wrapper = vectorise(wrapper, iname, configuration["simd_width"])
         code = loopy.generate_code_v2(wrapper)

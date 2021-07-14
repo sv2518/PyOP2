@@ -1,9 +1,9 @@
 #include <petscsys.h>
 #include <mkl.h>
 
-static void solve(double4* __restrict__ Aout, const double4* __restrict__ A, const double4* __restrict__ B, PetscBLASInt N)
+static void solve(double8* __restrict__ Aout, const double8* __restrict__ A, const double8* __restrict__ B, PetscBLASInt N)
 {
-    MKL_INT nmat = 4;
+    MKL_INT nmat = 8;
     MKL_COMPACT_PACK format = MKL_COMPACT_AVX;
     MKL_INT mkl_N = N;
     MKL_LAYOUT layout = MKL_COL_MAJOR;
@@ -35,7 +35,7 @@ static void solve(double4* __restrict__ Aout, const double4* __restrict__ A, con
     }
     mkl_dgemm_compact(layout, TN, TN, mkl_N, one, mkl_N, one, A_compact, mkl_N, B_compact , mkl_N, one, C_compact, mkl_N, format, nmat);
     
-    memcpy(Aout, C_compact, N*N*sizeof(double4));
+    memcpy(Aout, C_compact, N*N*sizeof(double8));
     mkl_free(A_compact);
     mkl_free(B_compact);
     mkl_free(C_compact);
